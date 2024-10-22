@@ -16,13 +16,13 @@ let allQuestions = [];
 app.post('/webhook', async(req, res) => {
     console.log('Webhook received:');
    // console.log(req.body); // Log the entire webhook payload
-   // console.log(JSON.stringify(req.body, null, 2));
+   console.log(JSON.stringify(req.body, null, 2));
 
     // Collect all experiences (names) from the array of items
    // const experiences = req.body.data.items.map(item => item?.name ?? null);
     const notes = req.body.data.notes.map(note => note?.text ?? null);
 
-    allQuestions = [];
+     allQuestions = [];
 // Initialize arrays to store multiple values
     const experiences = [];
     const experiencesID = [];
@@ -66,17 +66,14 @@ app.post('/webhook', async(req, res) => {
 
 
 // Access Questions1 and Questions2
-const Questions1 = allQuestions[0]?.Questions ?? null;
-const Questions2 = allQuestions.length > 1 ? allQuestions[1]?.Questions ?? null : null;
+    const Questions1 = allQuestions[0]?.Questions ?? null;
+    const Questions2 = allQuestions.length > 1 ? allQuestions[1]?.Questions ?? 0 : 0;
 
 
     req.body.data.notes.forEach(note => {
         notesArray.push(note?.text ?? null);
     });
 
-
-    // Checks how many experiences there are
-    const numberOfExperiences = experiences.length;
 
 // Store the received data
     latestWebhookData = {
@@ -102,6 +99,7 @@ const Questions2 = allQuestions.length > 1 ? allQuestions[1]?.Questions ?? null 
     //console.log('Stored webhook data:', latestWebhookData);
     console.log('Stored webhook data:', JSON.stringify(latestWebhookData, null, 2));
 
+   
     try {
         // Handle order.create and order.update cases
         if (latestWebhookData.eventName === 'order.create') {
@@ -128,8 +126,10 @@ const Questions2 = allQuestions.length > 1 ? allQuestions[1]?.Questions ?? null 
         console.error('Error processing webhook:', error);
         return res.status(500).send('An error occurred while processing the webhook');
     }
-
+ 
     });
+
+    
 
     //insert intp mssql actual tables
 async function insertData2(latestWebhookData) { // Accept booking as a parameter
@@ -172,8 +172,6 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
             let TeacherID;
             let SchooldID;
 
-
-            
             /**
             // Start of inserting into booking and customer table
             const nameParts = latestWebhookData.customerName.split(" ");
@@ -288,7 +286,8 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
         }
     }
 
-    // for postgre
+
+    // for postgres single table
     async function insertData3(latestWebhookData) {
         // PostgreSQL database configuration
         const pool = new Pool({
@@ -310,119 +309,202 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
             const fiscalYear = arrivalDate ? new Date(arrivalDate).getFullYear() : null;
     
             if (latestWebhookData.eventName === 'order.create') {
-                // Insert new row for order.create
-                const insertQuery = `
-                    INSERT INTO saltcorn.XolaBooking (
-                        EventName, 
-                        XolaBookingID, 
-                        PaymentMethod, 
-                        CustomerFirstName, 
-                        CustomerLastName, 
-                        CustomerEmail, 
-                        Phone, 
-                        Invoice, 
-                        Amount, 
-                        ExperienceID, 
-                        Experience, 
-                        Quantity, 
-                        Grades, 
-                        SchoolName, 
-                        SchoolBoard, 
-                        Address, 
-                        NumStudents, 
-                        ArrivalDate, 
-                        CreatedDate, 
-                        UpdatedDate, 
-                        ArrivalTime, 
-                        Note, 
-                        Theme, 
-                        Location, 
-                        Paid, 
-                        Fiscal, 
-                        InXola, 
-                        Project, 
-                        Funder, 
-                        Subsidy, 
-                        DepositNotes
-                    ) 
-                    VALUES (
-                        $1, $2, $3, $4, $5, $6, $7, $8, $9, 
-                        $10, $11, $12, $13, $14, $15, $16, 
-                        $17, $18, $19, $20, $21, $22, $23, 
-                        $24, $25, $26, $27, $28, $29, $30, 
-                        $31 )`;
+                // Loop through the bookings to insert multiple rows
+                for (let i = 0; i < latestWebhookData.ExperiencesID.length; i++) {
+                    const insertQuery = `
+                        INSERT INTO saltcorn.XolaBooking (
+                            EventName, 
+                            XolaBookingID, 
+                            PaymentMethod, 
+                            CustomerFirstName, 
+                            CustomerLastName, 
+                            CustomerEmail, 
+                            Phone, 
+                            Invoice, 
+                            Amount, 
+                            ExperienceID, 
+                            Experience, 
+                            Quantity, 
+                            Grades, 
+                            SchoolName, 
+                            SchoolBoard, 
+                            Address, 
+                            NumStudents, 
+                            ArrivalDate, 
+                            CreatedDate, 
+                            UpdatedDate, 
+                            ArrivalTime, 
+                            Note, 
+                            Theme, 
+                            Location, 
+                            Paid, 
+                            Fiscal, 
+                            InXola, 
+                            Project, 
+                            Funder, 
+                            Subsidy, 
+                            DepositNotes
+                        ) 
+                        VALUES (
+                            $1, $2, $3, $4, $5, $6, $7, $8, $9, 
+                            $10, $11, $12, $13, $14, $15, $16, 
+                            $17, $18, $19, $20, $21, $22, $23, 
+                            $24, $25, $26, $27, $28, $29, $30, 
+                            $31)`;
     
-                await client.query(insertQuery, [
-                    latestWebhookData.eventName || null, // EventName
-                    latestWebhookData.id || null, // XolaBookingID
-                    latestWebhookData.paymentMethod || null, // PaymentMethod
-                    latestWebhookData.customerName ? latestWebhookData.customerName.split(" ")[0] : null, // CustomerFirstName
-                    latestWebhookData.customerName ? latestWebhookData.customerName.split(" ")[1] : null, // CustomerLastName
-                    latestWebhookData.customerEmail || null, // CustomerEmail
-                    latestWebhookData.phone || null, // Phone
-                    null, // Invoice# 
-                    latestWebhookData.amount || 0, // Amount
-                    latestWebhookData.ExperiencesID && latestWebhookData.ExperiencesID.length > 0 ? latestWebhookData.ExperiencesID[0] : null, // ExperienceID
-                    latestWebhookData.Experiences && latestWebhookData.Experiences.length > 0 ? latestWebhookData.Experiences[0] : null, // Experience
-                    latestWebhookData.Quantity && latestWebhookData.Quantity.length > 0 ? latestWebhookData.Quantity[0] : null, // Quantity
-                    latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 1 ? latestWebhookData.Questions1[1] : null, // Grades
-                    latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 4 ? latestWebhookData.Questions1[4] : null, // SchoolName
-                    latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 3 ? latestWebhookData.Questions1[3] : null, // SchoolBoard
-                    null, // Address 
-                    latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 2 ? latestWebhookData.Questions1[2] : null, // NumStudents
-                    latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[0] : null, // ArrivalDate
-                    currentDate, // CreatedDate
-                    currentDate, // UpdatedDate
-                    latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[0] : null, // ArrivalTime
-                    latestWebhookData.notes && latestWebhookData.notes.length > 0 ? latestWebhookData.notes.join(", ") : null, // Note
-                    latestWebhookData.addons1 && latestWebhookData.addons1.length > 0 ? latestWebhookData.addons1[0] : null, // Theme
-                    latestWebhookData.addons2 && latestWebhookData.addons2.length > 0 ? latestWebhookData.addons2[0] : null, // Location
-                    false, // Paid (default false)
-                    fiscalYear, // Fiscal 
-                    true, // InXola (default true)
-                    "909 Education General", // Project 
-                    "Program Funds", // Funder 
-                    null, // Subsidy 
-                    null // DepositNotes
-                ]);
+                    await client.query(insertQuery, [
+                        latestWebhookData.eventName || null, // EventName
+                        latestWebhookData.id || null, // XolaBookingID
+                        latestWebhookData.paymentMethod || null, // PaymentMethod
+                        latestWebhookData.customerName ? latestWebhookData.customerName.split(" ")[0] : null, // CustomerFirstName
+                        latestWebhookData.customerName ? latestWebhookData.customerName.split(" ")[1] : null, // CustomerLastName
+                        latestWebhookData.customerEmail || null, // CustomerEmail
+                        latestWebhookData.phone || null, // Phone
+                        null, // Invoice#
+                        latestWebhookData.amount || 0, // Amount
+                        latestWebhookData.ExperiencesID[i] || null, // ExperienceID
+                        latestWebhookData.Experiences[i] || null, // Experience
+                        latestWebhookData.Quantity[i] || null, // Quantity
+                        latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 1 ? latestWebhookData.Questions1[1] : null, // Grades
+                        latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 4 ? latestWebhookData.Questions1[4] : null, // SchoolName
+                        latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 3 ? latestWebhookData.Questions1[3] : null, // SchoolBoard
+                        null, // Address
+                        latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 2 ? latestWebhookData.Questions1[2] : null, // NumStudents
+                        latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[0] : null, // ArrivalDate
+                        currentDate, // CreatedDate
+                        currentDate, // UpdatedDate
+                        latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[0] : null, // ArrivalTime
+                        latestWebhookData.notes && latestWebhookData.notes.length > 0 ? latestWebhookData.notes.join(", ") : null, // Note
+                        latestWebhookData.addons1 && latestWebhookData.addons1.length > 0 ? latestWebhookData.addons1[0] : null, // Theme
+                        latestWebhookData.addons2 && latestWebhookData.addons2.length > 0 ? latestWebhookData.addons2[0] : null, // Location
+                        false, // Paid (default false)
+                        fiscalYear, // Fiscal
+                        true, // InXola (default true)
+                        "909 Education General", // Project
+                        "Program Funds", // Funder
+                        null, // Subsidy
+                        null // DepositNotes
+                    ]);
     
-                console.log('Data inserted successfully for order.create:', latestWebhookData.id);
+                    console.log(`Data inserted successfully for order.create: ${latestWebhookData.id}, ExperienceID: ${latestWebhookData.ExperiencesID[i]}`);
+                }
             } else if (latestWebhookData.eventName === 'order.update') {
-                // Update existing row for order.update
-                const updateQuery = `
-                    UPDATE saltcorn.XolaBooking 
-                    SET 
-                        EventName = $1,
-                        PaymentMethod = $2,
-                        ExperienceID = $3,
-                        Grades = $4,
-                        SchoolName = $5,
-                        SchoolBoard = $6,
-                        NumStudents = $7,
-                        ArrivalDate = $8,
-                        UpdatedDate = $9,
-                        ArrivalTime = $10,
-                        Paid = $11
-                    WHERE XolaBookingID = $12 AND ExperienceID = $13`;
-    
-                await client.query(updateQuery, [
-                    latestWebhookData.eventName || null, // EventName
-                    latestWebhookData.paymentMethod || null, // PaymentMethod
-                    latestWebhookData.ExperiencesID && latestWebhookData.ExperiencesID.length > 0 ? latestWebhookData.ExperiencesID[0] : null, // ExperienceID
-                    latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 1 ? latestWebhookData.Questions1[1] : null, // Grades
-                    latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 4 ? latestWebhookData.Questions1[4] : null, // SchoolName
-                    latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 3 ? latestWebhookData.Questions1[3] : null, // SchoolBoard
-                    latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 2 ? latestWebhookData.Questions1[2] : null, // NumStudents
-                    latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[0] : null, // ArrivalDate
-                    currentDate, // UpdatedDate
-                    latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[0] : null, // ArrivalTime
-                    false, // Paid (default false)
-                    latestWebhookData.id || null, // XolaBookingID (for WHERE clause)
-                    latestWebhookData.ExperiencesID && latestWebhookData.ExperiencesID.length > 0 ? latestWebhookData.ExperiencesID[0] : null // ExperienceID (for WHERE clause)
-                ]);
-    
-                console.log('Data updated successfully for order.update:', latestWebhookData.id);
-            }
+                // Loop through the bookings to update multiple rows
+                const experienceIDs = latestWebhookData.ExperiencesID; // Get all Experience IDs
+                const updateQueries = []; // Store queries to execute later
+
+    // Construct different update queries based on the number of Experience IDs
+    if (experienceIDs.length > 0 && (latestWebhookData.Questions2.length < 2)) {
+        const updateQuery1 = `
+            UPDATE saltcorn.XolaBooking 
+            SET 
+                EventName = $1,
+                PaymentMethod = $2,
+                ExperienceID = $3,
+                Grades = $4,
+                SchoolName = $5,
+                SchoolBoard = $6,
+                NumStudents = $7,
+                ArrivalDate = $8,
+                UpdatedDate = $9,
+                ArrivalTime = $10,
+                Paid = $11
+            WHERE XolaBookingID = $12 AND ExperienceID = $13`;
+
+        // Add first update query
+        updateQueries.push(client.query(updateQuery1, [
+            latestWebhookData.eventName || null,
+            latestWebhookData.paymentMethod || null,
+            experienceIDs[0] || null, // ExperienceID[0]
+            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[1] : null, // Grades
+            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 4 ? latestWebhookData.Questions1[4] : null, // SchoolName
+            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 3 ? latestWebhookData.Questions1[3] : null, // SchoolBoard
+            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 2 ? latestWebhookData.Questions1[2] : null, // NumStudents
+            latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[0] : null, // ArrivalDate
+            currentDate, // UpdatedDate
+            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[0] : null, // ArrivalTime
+            false, // Paid (default false)
+            latestWebhookData.id || null, // XolaBookingID
+            experienceIDs[0] || null, // ExperienceID[0]
+            
+        ]));
+    }
+
+    else if(experienceIDs.length > 0 && latestWebhookData.Questions2 == 0) {
+        const updateQuery3 = `
+            UPDATE saltcorn.XolaBooking 
+            SET 
+                EventName = $1,
+                PaymentMethod = $2,
+                ExperienceID = $3,
+                Grades = $4,
+                SchoolName = $5,
+                SchoolBoard = $6,
+                NumStudents = $7,
+                ArrivalDate = $8,
+                UpdatedDate = $9,
+                ArrivalTime = $10,
+                Paid = $11
+            WHERE XolaBookingID = $12 AND ExperienceID = $13`;
+
+        // Add first update query
+        updateQueries.push(client.query(updateQuery3, [
+            latestWebhookData.eventName || null,
+            latestWebhookData.paymentMethod || null,
+            experienceIDs[0] || null, // ExperienceID[0]
+            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[1] : null, // Grades
+            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 4 ? latestWebhookData.Questions1[4] : null, // SchoolName
+            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 3 ? latestWebhookData.Questions1[3] : null, // SchoolBoard
+            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 2 ? latestWebhookData.Questions1[2] : null, // NumStudents
+            latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[0] : null, // ArrivalDate
+            currentDate, // UpdatedDate
+            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[0] : null, // ArrivalTime
+            false, // Paid (default false)
+            latestWebhookData.id || null, // XolaBookingID
+            experienceIDs[0] || null, // ExperienceID[0]
+           
+        ]));
+    }
+        // If there's a second ExperienceID, add another update query
+        else if (experienceIDs.length > 1 && latestWebhookData.Questions2.length>1) {
+            const updateQuery2 = `
+                UPDATE saltcorn.XolaBooking 
+                SET 
+                    EventName = $1,
+                    PaymentMethod = $2,
+                    ExperienceID = $3,
+                    Grades = $4,
+                    SchoolName = $5,
+                    SchoolBoard = $6,
+                    NumStudents = $7,
+                    ArrivalDate = $8,
+                    UpdatedDate = $9,
+                    ArrivalTime = $10,
+                    Paid = $11
+                WHERE XolaBookingID = $12 AND ExperienceID = $13`;
+
+            updateQueries.push(client.query(updateQuery2, [
+                latestWebhookData.eventName || null,
+                latestWebhookData.paymentMethod || null,
+                experienceIDs[1] || null, // ExperienceID[1]
+                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 1 ? latestWebhookData.Questions2[1] : null, // Grades
+                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 4 ? latestWebhookData.Questions2[4] : null, // SchoolName
+                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 3 ? latestWebhookData.Questions2[3] : null, // SchoolBoard
+                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 2 ? latestWebhookData.Questions2[2] : null, // NumStudents
+                latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[0] : null, // ArrivalDate
+                currentDate, // UpdatedDate
+                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[0] : null, // ArrivalTime
+                false, // Paid (default false)
+                latestWebhookData.id || null, // XolaBookingID
+                experienceIDs[1] || null // ExperienceID[1]
+            ]));
+        }
+
+        // Execute all update queries in parallel
+        await Promise.all(updateQueries);
+
+        console.log(`Data updated successfully for order.update: ${latestWebhookData.id}, ExperienceIDs: ${experienceIDs}`);
+    }
         } catch (error) {
             console.error('Error inserting/updating data:', error);
         } finally {
@@ -430,10 +512,8 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
         }
     }
         
-    // update sql query
 
-
-
+//ms sql
 async function insertData5(latestWebhookData) {
     let pool;
         try {
@@ -576,8 +656,6 @@ async function insertData5(latestWebhookData) {
         .input('SchoolBoard', sql.VarChar(20),  latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 3 ? latestWebhookData.Questions1[3] : null)
         .input('Address', sql.VarChar(50), null);
        
-
-
 
             // Execute the insert
             const result = await request.query(insertQuery);
