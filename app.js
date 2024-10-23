@@ -9,6 +9,18 @@ const { Pool } = require('pg');
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
 
+
+const pool = new Pool({
+    user: 'cpawssadb',
+    host: '164.90.150.233',
+    database: 'cpawsdb',
+    password: 'cpaws@edu24',
+    port: 5432,
+    ssl: {
+        rejectUnauthorized: false
+    }
+});
+
 // Variable to store the latest webhook data
 let latestWebhookData = {};
 let allQuestions = [];
@@ -34,6 +46,7 @@ app.post('/webhook', async(req, res) => {
     const notesArray = [];
     const addons1Array = [];
     const addons2Array = [];
+    const amountArray = [];
     
 
      // Loop through each item in the `items` array and collect values
@@ -43,6 +56,7 @@ app.post('/webhook', async(req, res) => {
         bookedDate.push(item?.arrival?? null); // Collect arrivalDatetime for each item
         quantity.push(item?.quantity?? null); // select the quantity
         demographic.push(item?.demographics?.[0]. quantity?? null); 
+        amountArray.push(item?. amount ?? null);
         addons1Array.push(item?.addOns?.[0]?.configuration?.name ?? null); // Collect Addons1 name
         addons2Array.push(item?.addOns?.[1]?.configuration?.name ?? null); // Collect Addons2 name
             // Check if guestsData exists and is an array
@@ -86,6 +100,7 @@ app.post('/webhook', async(req, res) => {
         customerEmail: req.body.data.customerEmail ?? null,
         phone: req.body.data.phone ?? null,
         amount: req.body.data.amount ?? null,
+        amountArr: amountArray,
         ExperiencesID: experiencesID,
         Experiences: experiences,
         Demographics: demographic, // Array of all experiences
@@ -102,11 +117,26 @@ app.post('/webhook', async(req, res) => {
     console.log('Stored webhook data:', JSON.stringify(latestWebhookData, null, 2));
 
    
+    
+
     try {
         // Handle order.create and order.update cases
         if (latestWebhookData.eventName === 'order.create' || latestWebhookData.eventName === 'order.update') {
             await insertData3(latestWebhookData);
+           // const schoolId = await insertSchool(pool, latestWebhookData); 
+            //const teacherId = await insertTeacher(pool, latestWebhookData);
+            
+           // console.log("Inserted School ID:", schoolId);
+            //console.log("Inserted Teacher ID:", teacherId);
             return res.status(200).send('Webhook received and data inserted in PostgreSQL for order.create');
+        }
+
+        if(latestWebhookData.eventName === 'order.update'){
+          //  const schoolId = await insertSchool(pool, latestWebhookData); 
+          //  const teacherId = await insertTeacher(pool, latestWebhookData);
+            
+          //  console.log("Inserted School ID:", schoolId);
+          //  console.log("Inserted Teacher ID:", teacherId);
         }
 
         // Handle order.cancel case
@@ -122,6 +152,7 @@ app.post('/webhook', async(req, res) => {
         console.error('Error processing webhook:', error);
         return res.status(500).send('An error occurred while processing the webhook');
     }
+
 
     });
 
@@ -313,6 +344,8 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
                 // Loop through the bookings to insert multiple rows
                 for (let i = 0; i < latestWebhookData.ExperiencesID.length; i++) {
                     for(let j=0; j< latestWebhookData.Quantity[i]; j++){
+
+                        const actualAmount = latestWebhookData.amountArr[i]/latestWebhookData.Quantity[i];
                     const insertQuery = `
                         INSERT INTO saltcorn.XolaBooking (
                             EventName, 
@@ -363,7 +396,7 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
                         latestWebhookData.customerEmail || null, // CustomerEmail
                         latestWebhookData.phone || null, // Phone
                         null, // Invoice#
-                        latestWebhookData.amount || 0, // Amount
+                        actualAmount || 0, // Amount
                         latestWebhookData.ExperiencesID[i] || null, // ExperienceID
                         latestWebhookData.Experiences[i] || null, // Experience
                         latestWebhookData.Quantity[i] || null, // Quantity
@@ -372,13 +405,13 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
                         null, // SchoolBoard
                         null, // Address
                         null, // NumStudents
-                        latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[0] : null, // ArrivalDate
+                        latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[i] : null, // ArrivalDate
                         currentDate, // CreatedDate
                         currentDate, // UpdatedDate
                         null, // ArrivalTime
                         latestWebhookData.notes && latestWebhookData.notes.length > 0 ? latestWebhookData.notes.join(", ") : null, // Note
-                        latestWebhookData.addons1 && latestWebhookData.addons1.length > 0 ? latestWebhookData.addons1[0] : null, // Theme
-                        latestWebhookData.addons2 && latestWebhookData.addons2.length > 0 ? latestWebhookData.addons2[0] : null, // Location
+                        latestWebhookData.addons1 && latestWebhookData.addons1.length > 0 ? latestWebhookData.addons1[i] : null, // Theme
+                        latestWebhookData.addons2 && latestWebhookData.addons2.length > 0 ? latestWebhookData.addons2[i] : null, // Location
                         false, // Paid (default false)
                         fiscalYear, // Fiscal
                         true, // InXola (default true)
@@ -431,9 +464,10 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
             experienceIDs[0] || null, // ExperienceID[0]
             
         ]));
-    }
+             }
         // If there's a second ExperienceID, add another update query
-        if (experienceIDs.length > 1 && (latestWebhookData.Questions2.length> 1) ) {
+    if (experienceIDs.length > 1 && (latestWebhookData.Questions2.length> 1) ) {
+            console.log("Second if condition met: experienceIDs.length > 1 and latestWebhookData.Questions2.length > 1");
             const updateQuery2 = `
                 UPDATE saltcorn.XolaBooking 
                 SET 
@@ -454,13 +488,13 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
                 latestWebhookData.eventName || null,
                 latestWebhookData.paymentMethod || null,
                 experienceIDs[1] || null, // ExperienceID[1]
-                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 1 ? latestWebhookData.Questions2[2] : null, // Grades
-                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 4 ? latestWebhookData.Questions2[4] : null, // SchoolName
-                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 3 ? latestWebhookData.Questions2[0] : null, // SchoolBoard
-                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 2 ? latestWebhookData.Questions2[3] : null, // NumStudents
-                latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[0] : null, // ArrivalDate
+                latestWebhookData.Questions2 && latestWebhookData.Questions2.length > 1 ? latestWebhookData.Questions2[2] : null, // Grades
+                latestWebhookData.Questions2 && latestWebhookData.Questions2.length > 4 ? latestWebhookData.Questions2[4] : null, // SchoolName
+                latestWebhookData.Questions2 && latestWebhookData.Questions2.length > 3 ? latestWebhookData.Questions2[0] : null, // SchoolBoard
+                latestWebhookData.Questions2 && latestWebhookData.Questions2.length > 2 ? latestWebhookData.Questions2[3] : null, // NumStudents
+                latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[1] : null, // ArrivalDate
                 currentDate, // UpdatedDate
-                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[1] : null, // ArrivalTime
+                latestWebhookData.Questions2 && latestWebhookData.Questions2.length > 0 ? latestWebhookData.Questions2[1] : null, // ArrivalTime
                 false, // Paid (default false)
                 latestWebhookData.id || null, // XolaBookingID
                 experienceIDs[1] || null // ExperienceID[1]
@@ -479,7 +513,137 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
         }
     }
 
- 
+//postgre table
+   // Function to insert a school into the database
+
+
+   /**
+async function insertSchool(pool, data) {
+    // Check if the school already exists
+    console.log("insert school being called");
+    const existingSchoolQuery = `
+        SELECT SchoolID 
+        FROM PrabinTable.Schools 
+        WHERE School = $1 `;
+
+    const existingSchoolResult = await pool.query(existingSchoolQuery, [
+        data.Questions1[4],  // School Name
+        
+    ]);
+
+    // If the school exists, return the existing SchoolID
+    if (existingSchoolResult.rows.length > 0) {
+        console.log("Data already in database")
+        return existingSchoolResult.rows[0].schoolid;  // Return existing SchoolID
+        
+    }
+
+    // Insert the new school if it does not exist
+    const query = `
+        INSERT INTO PrabinTable.Schools (School, Board, Category, Region, Rural, HighNeeds, Grades, ContactInfo, Notes)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING SchoolID`;
+    
+    const result = await pool.query(query, [
+        data.Questions1[4],  // School Name
+        data.Questions1[0],  // School Board
+        null,                 // Category (can be modified as needed)
+        null,                 // Region (can be modified as needed)
+        null,                 // Rural (can be modified as needed)
+        null,                 // HighNeeds (can be modified as needed)
+        data.Questions1[2],  // Grades
+        null,                 // ContactInfo (JSONB, can be modified as needed)
+        null                  // Notes (can be modified as needed)
+    ]);
+    
+    return result.rows[0].schoolid;  // Return the inserted school ID
+}
+   
+async function insertTeacher(pool, data) {
+    // Ensure customerName is valid before proceeding
+    if (!data.customerName) {
+        throw new Error("Customer name is required.");
+    }
+
+    console.log("Customer Name:", data.customerName);
+    console.log("Customer Email:", data.customerEmail);
+
+    const nameParts = data.customerName.split(" ");
+    const firstName = nameParts[0]; // First part as FirstName
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : null; // Join remaining parts as LastName
+
+    // Check if the teacher already exists
+    const existingTeacherQuery = `
+        SELECT TeacherID 
+        FROM PrabinTable.Teachers 
+        WHERE FirstName = $1 AND LastName = $2`;
+
+    const existingTeacherResult = await pool.query(existingTeacherQuery, [
+        firstName, // FirstName
+        lastName   // LastName
+    ]);
+
+    // If the teacher exists, return the existing TeacherID
+    if (existingTeacherResult.rows.length > 0) {
+        console.log("Teacher already exists");
+        return existingTeacherResult.rows[0].teacherid;  // Return existing TeacherID
+    }
+
+    // If the teacher does not exist, insert the new teacher
+    const insertQuery = `
+        INSERT INTO PrabinTable.Teachers (Email, LastName, FirstName, Title, DateCreated, DateUpdated, IsDeleted)
+        VALUES ($1, $2, $3, $4, NOW(), NOW(), FALSE)
+        RETURNING TeacherID`;
+
+    const result = await pool.query(insertQuery, [
+        data.customerEmail || null, // Email
+        lastName || null,           // LastName
+        firstName,                  // FirstName
+        null                         // Title (can be modified as needed)
+    ]);
+
+    console.log("Data inserted successfully, TeacherID:", result.rows[0].teacherid);
+    
+    return result.rows[0].teacherid;  // Return the inserted TeacherID
+}
+*/
+    
+     /**
+    async function insertClass(client, data, schoolId) {
+        const query = `
+            INSERT INTO PrabinTable.Classes (NumberOfStudents, EnvironmentalAction, CYear, ClassNotes, SchoolID, DateCreated, DateUpdated, IsDeleted)
+            VALUES ($1, $2, $3, $4, $5, NOW(), NOW(), FALSE)
+            RETURNING ClassID`;
+        
+        const result = await client.query(query, [
+            data.Questions1[3],              // Number of Students
+            false,                            // Environmental Action (can be modified as needed)
+            null,                             // CYear (can be modified as needed)
+            null,                             // Class Notes (can be modified as needed)
+            schoolId                          // SchoolID (FK)
+        ]);
+        
+        return result.rows[0].classid;  // Return the inserted class ID
+    }
+    
+    async function insertBooking(client, data, teacherId, classId) {
+        const query = `
+            INSERT INTO PrabinTable.ProgramsDelivered (ProgramID, ProgramDate, StartTime, EndTime, InstructorID, PaymentType, Notes, DateCreated, DateUpdated, IsDeleted)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW(), FALSE)`;
+        
+        await client.query(query, [
+            data.ExperiencesID[0] || null,     // ProgramID (assuming it's the first experience ID)
+            data.arrivalDate ? data.arrivalDate[0] : null,  // ProgramDate
+            data.Questions1[1] || null,       // StartTime (can be modified as needed)
+            null,                              // EndTime (can be modified as needed)
+            teacherId,                        // InstructorID (FK)
+            data.paymentMethod || null,        // PaymentType
+            null                               // Notes (can be modified as needed)
+        ]);
+        
+        console.log(`Booking inserted for ${data.id}`);
+    }
+        */ 
 // Handle GET request to the root URL
 app.get('/', (req, res) => {
     res.send('Welcome to the webhook geda!');
