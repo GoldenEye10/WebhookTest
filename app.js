@@ -12,11 +12,13 @@ app.use(bodyParser.urlencoded({ extended: true }));
 // Variable to store the latest webhook data
 let latestWebhookData = {};
 let allQuestions = [];
+let webhookJSON = {}
 // Handle Xola webhook
 app.post('/webhook', async(req, res) => {
     console.log('Webhook received:');
    // console.log(req.body); // Log the entire webhook payload
    console.log(JSON.stringify(req.body, null, 2));
+   webhookJSON = req.body;
 
     // Collect all experiences (names) from the array of items
    // const experiences = req.body.data.items.map(item => item?.name ?? null);
@@ -102,19 +104,13 @@ app.post('/webhook', async(req, res) => {
    
     try {
         // Handle order.create and order.update cases
-        if (latestWebhookData.eventName === 'order.create') {
+        if (latestWebhookData.eventName === 'order.create' || latestWebhookData.eventName === 'order.update') {
             await insertData3(latestWebhookData);
             return res.status(200).send('Webhook received and data inserted in PostgreSQL for order.create');
         }
 
-        if (latestWebhookData.eventName === 'order.update') {
-            await insertData3(latestWebhookData); // Assuming you want to call insertData3 for updates as well
-            await insertData5(latestWebhookData); // Call insertData5 as needed
-            return res.status(200).send('Webhook received and data updated in PostgreSQL for order.update');
-        }
-
         // Handle order.cancel case
-        if (latestWebhookData.eventName === 'order.cancel') {
+        else if (latestWebhookData.eventName === 'order.cancel') {
             console.log("Cancel order received");
             return res.status(200).send('Webhook received for order.cancel');
         }
@@ -126,10 +122,9 @@ app.post('/webhook', async(req, res) => {
         console.error('Error processing webhook:', error);
         return res.status(500).send('An error occurred while processing the webhook');
     }
- 
+
     });
 
-    
 
     //insert intp mssql actual tables
 async function insertData2(latestWebhookData) { // Accept booking as a parameter
@@ -309,8 +304,15 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
             const fiscalYear = arrivalDate ? new Date(arrivalDate).getFullYear() : null;
     
             if (latestWebhookData.eventName === 'order.create') {
+                //first loop through number of classes
+
+               
+
+                  //  console.log(latestWebhookData.Quantity[j]);
+
                 // Loop through the bookings to insert multiple rows
                 for (let i = 0; i < latestWebhookData.ExperiencesID.length; i++) {
+                    for(let j=0; j< latestWebhookData.Quantity[i]; j++){
                     const insertQuery = `
                         INSERT INTO saltcorn.XolaBooking (
                             EventName, 
@@ -365,15 +367,15 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
                         latestWebhookData.ExperiencesID[i] || null, // ExperienceID
                         latestWebhookData.Experiences[i] || null, // Experience
                         latestWebhookData.Quantity[i] || null, // Quantity
-                        latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 1 ? latestWebhookData.Questions1[1] : null, // Grades
-                        latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 4 ? latestWebhookData.Questions1[4] : null, // SchoolName
-                        latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 3 ? latestWebhookData.Questions1[3] : null, // SchoolBoard
+                        null, // Grades
+                        null , // SchoolName
+                        null, // SchoolBoard
                         null, // Address
-                        latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 2 ? latestWebhookData.Questions1[2] : null, // NumStudents
+                        null, // NumStudents
                         latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[0] : null, // ArrivalDate
                         currentDate, // CreatedDate
                         currentDate, // UpdatedDate
-                        latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[0] : null, // ArrivalTime
+                        null, // ArrivalTime
                         latestWebhookData.notes && latestWebhookData.notes.length > 0 ? latestWebhookData.notes.join(", ") : null, // Note
                         latestWebhookData.addons1 && latestWebhookData.addons1.length > 0 ? latestWebhookData.addons1[0] : null, // Theme
                         latestWebhookData.addons2 && latestWebhookData.addons2.length > 0 ? latestWebhookData.addons2[0] : null, // Location
@@ -385,16 +387,17 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
                         null, // Subsidy
                         null // DepositNotes
                     ]);
-    
+                
                     console.log(`Data inserted successfully for order.create: ${latestWebhookData.id}, ExperienceID: ${latestWebhookData.ExperiencesID[i]}`);
                 }
+            }
             } else if (latestWebhookData.eventName === 'order.update') {
                 // Loop through the bookings to update multiple rows
                 const experienceIDs = latestWebhookData.ExperiencesID; // Get all Experience IDs
                 const updateQueries = []; // Store queries to execute later
 
     // Construct different update queries based on the number of Experience IDs
-    if (experienceIDs.length > 0 && (latestWebhookData.Questions2.length < 2)) {
+    if (experienceIDs.length > 0) {
         const updateQuery1 = `
             UPDATE saltcorn.XolaBooking 
             SET 
@@ -416,57 +419,21 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
             latestWebhookData.eventName || null,
             latestWebhookData.paymentMethod || null,
             experienceIDs[0] || null, // ExperienceID[0]
-            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[1] : null, // Grades
-            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 4 ? latestWebhookData.Questions1[4] : null, // SchoolName
-            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 3 ? latestWebhookData.Questions1[3] : null, // SchoolBoard
-            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 2 ? latestWebhookData.Questions1[2] : null, // NumStudents
+            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[2] : null, // Grades
+            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[4] : null, // SchoolName
+            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[0] : null, // SchoolBoard
+            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[3] : null, // NumStudents
             latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[0] : null, // ArrivalDate
             currentDate, // UpdatedDate
-            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[0] : null, // ArrivalTime
+            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[1] : null, // ArrivalTime
             false, // Paid (default false)
             latestWebhookData.id || null, // XolaBookingID
             experienceIDs[0] || null, // ExperienceID[0]
             
         ]));
     }
-
-    else if(experienceIDs.length > 0 && latestWebhookData.Questions2 == 0) {
-        const updateQuery3 = `
-            UPDATE saltcorn.XolaBooking 
-            SET 
-                EventName = $1,
-                PaymentMethod = $2,
-                ExperienceID = $3,
-                Grades = $4,
-                SchoolName = $5,
-                SchoolBoard = $6,
-                NumStudents = $7,
-                ArrivalDate = $8,
-                UpdatedDate = $9,
-                ArrivalTime = $10,
-                Paid = $11
-            WHERE XolaBookingID = $12 AND ExperienceID = $13`;
-
-        // Add first update query
-        updateQueries.push(client.query(updateQuery3, [
-            latestWebhookData.eventName || null,
-            latestWebhookData.paymentMethod || null,
-            experienceIDs[0] || null, // ExperienceID[0]
-            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[1] : null, // Grades
-            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 4 ? latestWebhookData.Questions1[4] : null, // SchoolName
-            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 3 ? latestWebhookData.Questions1[3] : null, // SchoolBoard
-            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 2 ? latestWebhookData.Questions1[2] : null, // NumStudents
-            latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[0] : null, // ArrivalDate
-            currentDate, // UpdatedDate
-            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[0] : null, // ArrivalTime
-            false, // Paid (default false)
-            latestWebhookData.id || null, // XolaBookingID
-            experienceIDs[0] || null, // ExperienceID[0]
-           
-        ]));
-    }
         // If there's a second ExperienceID, add another update query
-        else if (experienceIDs.length > 1 && latestWebhookData.Questions2.length>1) {
+        if (experienceIDs.length > 1 && (latestWebhookData.Questions2.length> 1) ) {
             const updateQuery2 = `
                 UPDATE saltcorn.XolaBooking 
                 SET 
@@ -487,13 +454,13 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
                 latestWebhookData.eventName || null,
                 latestWebhookData.paymentMethod || null,
                 experienceIDs[1] || null, // ExperienceID[1]
-                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 1 ? latestWebhookData.Questions2[1] : null, // Grades
+                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 1 ? latestWebhookData.Questions2[2] : null, // Grades
                 latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 4 ? latestWebhookData.Questions2[4] : null, // SchoolName
-                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 3 ? latestWebhookData.Questions2[3] : null, // SchoolBoard
-                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 2 ? latestWebhookData.Questions2[2] : null, // NumStudents
+                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 3 ? latestWebhookData.Questions2[0] : null, // SchoolBoard
+                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 2 ? latestWebhookData.Questions2[3] : null, // NumStudents
                 latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[0] : null, // ArrivalDate
                 currentDate, // UpdatedDate
-                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[0] : null, // ArrivalTime
+                latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[1] : null, // ArrivalTime
                 false, // Paid (default false)
                 latestWebhookData.id || null, // XolaBookingID
                 experienceIDs[1] || null // ExperienceID[1]
@@ -511,166 +478,6 @@ async function insertData2(latestWebhookData) { // Accept booking as a parameter
             client.release();
         }
     }
-        
-
-//ms sql
-async function insertData5(latestWebhookData) {
-    let pool;
-        try {
-            // Database configuration
-            const config = {
-                user: 'Prabin', 
-                password: 'T00664996@mytru.ca', 
-                server: 'siralex.database.windows.net', 
-                database: 'cpaws-sql-test', 
-                options: {
-                    encrypt: true, // Use encryption if needed
-                    trustServerCertificate: true, 
-                },
-            };
-
-            pool = await sql.connect(config);
-
-                    // Check if the booking already exists
-        const checkQuery = `
-        SELECT COUNT(*) AS count
-        FROM XolaBooking
-        WHERE XolaBookingID = @XolaBookingID
-          AND ExperienceID = @ExperienceID;
-        `;
-
-        const checkRequest = pool.request()
-            .input('XolaBookingID', sql.VarChar(100), latestWebhookData.id)
-            .input('ExperienceID', sql.VarChar(50), latestWebhookData.ExperiencesID[0]); // Adjust if needed
-
-            const checkResult = await checkRequest.query(checkQuery);
-
-            if (checkResult.recordset[0].count > 0) {
-                console.log('Booking already exists. Not inserting.');
-                return; // Exit if the booking already exists
-            }
-
-            // Insert statement
-            const insertQuery = `
-                INSERT INTO XolaBooking (
-                    EventName,
-                    XolaBookingID,
-                    PaymentMethod,
-                    CustomerFirstName,
-                    CustomerLastName,
-                    CustomerEmail,
-                    Phone,
-                    Invoice#,
-                    Amount,
-                    ExperienceID,
-                    Experience,
-                    Quantity,
-                    Grades,
-                    SchoolName,
-                    SchoolBoard,
-                    Address,
-                    NumStudents,
-                    ArrivalDate,
-                    CreatedDate,
-                    UpdatedDate,
-                    ArrivalTime,
-                    Note,
-                    Theme,
-                    Location,
-                    Paid,
-                    Fiscal,
-                    InXola,
-                    Project,
-                    Funder,
-                    Subsidy,
-                    DepostitNotes
-                ) VALUES (
-                    @EventName,
-                    @XolaBookingID,
-                    @PaymentMethod,
-                    @CustomerFirstName,
-                    @CustomerLastName,
-                    @CustomerEmail,
-                    @Phone,
-                    @Invoice,
-                    @Amount,
-                    @ExperienceID,
-                    @Experience,
-                    @Quantity,
-                    @Grades,
-                    @SchoolName,
-                    @SchoolBoard,
-                    @Address,
-                    @NumStudents,
-                    @ArrivalDate,
-                    @CreatedDate,
-                    @UpdatedDate,
-                    @ArrivalTime,
-                    @Note,
-                    @Theme,
-                    @Location,
-                    @Paid,
-                    @Fiscal,
-                    @InXola,
-                    @Project,
-                    @Funder,
-                    @Subsidy,
-                    @DepositNotes
-
-                );
-            `;
-    
-            // Prepare the request
-// Prepare the insert request
-    const request = pool.request()
-        .input('EventName', sql.VarChar(50), latestWebhookData.eventName)
-        .input('XolaBookingID', sql.VarChar(100), latestWebhookData.id)
-        .input('PaymentMethod', sql.VarChar(50), latestWebhookData.paymentMethod)
-        .input('CustomerFirstName', sql.VarChar(50), latestWebhookData.customerName?.split(" ")[0] || null) // First name
-        .input('CustomerLastName', sql.VarChar(50), latestWebhookData.customerName?.split(" ")[1] || null) // Last name
-        .input('CustomerEmail', sql.VarChar(30), latestWebhookData.customerEmail)
-        .input('Phone', sql.VarChar(20), latestWebhookData.phone)
-        .input('Invoice', sql.Int, null) 
-        .input('Amount', sql.Decimal(18, 2), latestWebhookData.amount)
-        .input('ExperienceID', sql.VarChar(50), latestWebhookData.ExperiencesID && latestWebhookData.ExperiencesID.length > 0 ? latestWebhookData.ExperiencesID[0] : null) // Check for ExperiencesID
-        .input('Experience', sql.VarChar(99), latestWebhookData.Experiences && latestWebhookData.Experiences.length > 0 ? latestWebhookData.Experiences[0] : null) 
-        .input('Quantity', sql.Int, latestWebhookData.Quantity && latestWebhookData.Quantity.length > 0 ? latestWebhookData.Quantity[0] : null) 
-        .input('Grades', sql.VarChar(49), latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 1 ? latestWebhookData.Questions1[1] : null) 
-        .input('SchoolName', sql.VarChar(99), latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 4 ? latestWebhookData.Questions1[4] : null)
-        .input('ArrivalDate', sql.Date, latestWebhookData.arrivalDate && latestWebhookData.arrivalDate.length > 0 ? latestWebhookData.arrivalDate[0] : null) 
-        .input('CreatedDate', sql.Date, new Date()) // Set to current date
-        .input('UpdatedDate', sql.Date, new Date()) // Set to current date
-        .input('ArrivalTime', sql.VarChar(10), latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[0] : null) 
-        .input('Note', sql.VarChar(sql.MAX), latestWebhookData.notes && latestWebhookData.notes.length > 0 ? latestWebhookData.notes.join(", ") : null) 
-        .input('Theme', sql.VarChar(100), latestWebhookData.addons1 && latestWebhookData.addons1.length > 0 ? latestWebhookData.addons1[0] : null) 
-        .input('Location', sql.VarChar(100), latestWebhookData.addons2 && latestWebhookData.addons2.length > 0 ? latestWebhookData.addons2[0] : null)
-        .input('Paid', sql.Bit, 0) 
-        .input('Fiscal', sql.Int, latestWebhookData.arrivalDate && latestWebhookData.arrivalDate.length > 0 
-            ? new Date(latestWebhookData.arrivalDate[0]).getFullYear() : null) 
-        .input('InXola', sql.Bit, 1)
-        .input('Project', sql.VarChar(50), "909 Education General")
-        .input('Funder', sql.VarChar(50), "Program Funds")
-        .input('Subsidy', sql.VarChar(50), null)
-        .input('DepositNotes', sql.VarChar(50), null)
-        .input('NumStudents', sql.Int,  latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 2 ? latestWebhookData.Questions1[2] : null)
-        .input('SchoolBoard', sql.VarChar(20),  latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 3 ? latestWebhookData.Questions1[3] : null)
-        .input('Address', sql.VarChar(50), null);
-       
-
-            // Execute the insert
-            const result = await request.query(insertQuery);
-    
-            console.log('Insert successful:', result);
-        } catch (err) {
-            console.error('Error inserting booking:', err);
-        } finally {
-                    // Close the database connection
-        if (pool) {
-            await pool.close();
-        }
-            
-        }
-    }
 
  
 // Handle GET request to the root URL
@@ -678,17 +485,12 @@ app.get('/', (req, res) => {
     res.send('Welcome to the webhook geda!');
 });
 
+
 // Route to display the latest webhook data
 app.get('/latest', (req, res) => {
     res.send(`
         <h1>Latest Webhook Data</h1>
-        <p><strong>Event Name:</strong> ${latestWebhookData.eventName || 'N/A'}</p>
-        <p><strong>Customer Name:</strong> ${latestWebhookData.customerName || 'N/A'}</p>
-        <p><strong>Customer Email:</strong> ${latestWebhookData.customerEmail || 'N/A'}</p>
-        <p><strong>Phone:</strong> ${latestWebhookData.phone || 'N/A'}</p>
-        <p><strong>Amount:</strong> $${latestWebhookData.amount || 0}</p>
-        <p><strong>Created At:</strong> ${latestWebhookData.createdAt || 'N/A'}</p>
-        <p><strong>Experience:</strong> ${latestWebhookData.Experience || 'N/A'}</p>
+        <pre>${JSON.stringify(webhookJSON, null, 2)}</pre>
         <p><a href="/">Back to Home</a></p>
     `);
 });
