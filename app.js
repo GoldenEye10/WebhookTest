@@ -1,9 +1,7 @@
 const express = require('express');
 const bodyParser = require('body-parser');
-//const mysql = require('mysql2'); 
-//const sql = require('mssql'); // Import the mssql module
 const app = express();
-const PORT = process.env.PORT || 3004;
+const PORT = process.env.PORT || 8084;
 const { Pool } = require('pg');
 
 app.use(bodyParser.json());
@@ -28,7 +26,7 @@ let individualWebhook = {};
 // Handle Xola webhook
 app.post('/webhook', async(req, res) => {
     console.log('Webhook received:');
-   // console.log(req.body); // Log the entire webhook payload
+   console.log(req.body); // Log the entire webhook payload
    //console.log(JSON.stringify(req.body, null, 2));
    webhookJSON = req.body;
     // Collect all experiences (names) from the array of items
@@ -91,6 +89,7 @@ app.post('/webhook', async(req, res) => {
 // Store the received data
     latestWebhookData = {
         eventName: req.body.eventName ?? null,
+        orderStatus: req.body.data.items[0].status ?? null,
         id: req.body.data.id ?? null,
         paymentMethod: req.body.data.adjustments[0]?.meta?.payment?.method ?? null,
         customerName: req.body.data.customerName ?? null,
@@ -133,44 +132,21 @@ app.post('/webhook', async(req, res) => {
         try {
             await client.query('BEGIN');
 
-
-
-
-
-
-
-
-            // for prabincpaws schema
-
-            /**
-            
-            // Insert into the Invoices table
-            const invoiceId = await newInvoice(client, latestWebhookData);
-            console.log('Invoice ID:', invoiceId);
-            
-            // Insert into the Bookings table using the invoiceId
-            const bookingId = await newBookings(client, latestWebhookData, invoiceId);
-            console.log('Booking ID:', bookingId);
-            
-            // Insert into the Sessions table using the bookingId
-            const sessionId = await newSessionPL(client, latestWebhookData, bookingId);
-            console.log('Session ID:', sessionId);
-
-            const professionalLearningId = await newProfessionalLearning(client, latestWebhookData, sessionId);
-            console.log('professionalLearning ID:', professionalLearningId);
-*/
-
-
+            if(latestWebhookData.eventName === 'order.update' && (latestWebhookData.orderStatus != 700)){
 
             let schoolId = null; 
+            const totalClasses = latestWebhookData.Quantity.length;
+            console.log('Number of classes in professional learning: ' + totalClasses )
             
             const invoiceId = await Invoice(client, latestWebhookData);
             console.log(' Professional invoice ID:', invoiceId); 
+            
             
             // Insert into the classes table using the schoolID, sessionID
             const organizationId = await getOrganizationId(client, latestWebhookData);
             console.log('Organization ID:', organizationId);
 
+            
                         // check themes
             const themeId = await getThemes(client, latestWebhookData);
             console.log('Theme ID:', themeId);
@@ -189,7 +165,7 @@ app.post('/webhook', async(req, res) => {
 
 
             // Insert into the bookings table
-            const bookingId = await Booking(client, latestWebhookData, invoiceId, contactId);
+            const bookingId = await Booking(client, latestWebhookData, invoiceId, contactId, totalClasses);
             console.log('Booking ID:', bookingId);
 
 
@@ -200,55 +176,9 @@ app.post('/webhook', async(req, res) => {
             const professionalClassId = await ProfessionalLearningClasses(client, latestWebhookData, classId, organizationId);
             console.log('professional ID:', professionalClassId);
 
-            /**
-            let index;
-            while ((index = latestWebhookData.Experiences.findIndex(experience => 
-                specifiedValues.includes(experience.toLowerCase()))) !== -1) {
-    
-                // Log the found experience
-                console.log(`The experiences array contains one of the specified values at index ${index}:`, latestWebhookData.Experiences[index]);
-            
 
-                // Create the individualWebhook object for the matched index
-                const individualWebhook = {
-                    eventName: req.body.eventName ?? null,
-                    id: req.body.data.id ?? null,
-                    paymentMethod: req.body.data.adjustments[0]?.meta?.payment?.method ?? null,
-                    customerName: req.body.data.customerName ?? null,
-                    customerEmail: req.body.data.customerEmail ?? null,
-                    phone: req.body.data.phone ?? null,
-                    amount: latestWebhookData.amount,
-                    ExperienceID: latestWebhookData.ExperiencesID[index],
-                    Experience: latestWebhookData.Experiences[index],
-                    Demographic: latestWebhookData.Demographics[index],
-                    Quantity: latestWebhookData.Quantity[index],
-                    arrivalDate: latestWebhookData.arrivalDate[index],
-                    notes: latestWebhookData.notes[index],
-                    addon1: latestWebhookData.addons1[index],
-                    addon2: latestWebhookData.addons2[index],
-                    Questions1: allQuestions[index]
-                };
-
-                
-                console.log("Individual(organizational) webhook data created:", individualWebhook);
-    
-    
-                // Remove elements at the specified index from each array in latestWebhookData
-                latestWebhookData.amountArr.splice(index, 1);
-                latestWebhookData.ExperiencesID.splice(index, 1);
-                latestWebhookData.Experiences.splice(index, 1);
-                latestWebhookData.Demographics.splice(index, 1);
-                latestWebhookData.Quantity.splice(index, 1);
-                latestWebhookData.arrivalDate.splice(index, 1);
-                latestWebhookData.notes.splice(index, 1);
-                latestWebhookData.addons1.splice(index, 1);
-                latestWebhookData.addons2.splice(index, 1);
-                allQuestions.splice(index, 1);
-
-
-            }
- */
-    
+     
+        }
             // Commit the transaction if everything went well
             await client.query('COMMIT');
         } catch (error) {
@@ -265,12 +195,24 @@ app.post('/webhook', async(req, res) => {
         try {
             await client.query('BEGIN');
 
+            if(latestWebhookData.orderStatus <= 200){
+                console.log('No insertion or update because of status code 700')
+            }
+
+            if(latestWebhookData.orderStatus === 700){
+                console.log('cancel order status detected')
+            }
+
+            if(latestWebhookData.eventName === 'order.update' && latestWebhookData.orderStatus !== 700 && latestWebhookData.orderStatus >= 200 && latestWebhookData.orderStatus <= 300){
+
             let organizationId = null;
 
-            
-            //saltccorn schema
+            const totalClasses = Array.isArray(latestWebhookData.Quantity) ? latestWebhookData.Quantity.reduce((acc, val) => acc + val, 0) : 0;
 
-             // Insert into the classes table using the schoolID, sessionID
+            console.log('Number of classes in youth learning: ' + totalClasses )
+                
+            //saltcorn schema
+            // Insert into the classes table using the schoolID, sessionID
             const invoiceId = await Invoice(client, latestWebhookData);
             console.log('invoice ID:', invoiceId); 
 
@@ -290,73 +232,22 @@ app.post('/webhook', async(req, res) => {
             const programId = await getPrograms(client, latestWebhookData);
             console.log('Program ID:', programId);
 
-
-             // Insert into the classes table using the schoolID, sessionID
+            // Insert into the classes table using the schoolID, sessionID
             const contactId = await Contacts(client, latestWebhookData, schoolId, organizationId);
             console.log('Contact ID:', contactId);
 
-
             // Insert into the bookings table
-            const bookingId = await Booking(client, latestWebhookData, invoiceId, contactId);
+            const bookingId = await Booking(client, latestWebhookData, invoiceId, contactId, totalClasses);
             console.log('Booking ID:', bookingId);
 
             // create class
             const classId = await Classes(client, latestWebhookData, bookingId, programId, themeId, locationId);
             console.log('Class ID:', classId);
 
-
             const youthClassId = await YouthExperienceClasses(client, latestWebhookData, classId, schoolId);
             console.log('Youth Class ID:', youthClassId);
             
-            // youth experience for prabincpaws
-             /**
-            // Insert into the Invoices table
-            const invoiceId = await newInvoice(client, latestWebhookData);
-            console.log('Invoice ID:', invoiceId);
-            
-            // Insert into the Bookings table using the invoiceId
-            const bookingId = await newBookings(client, latestWebhookData, invoiceId);
-            console.log('Booking ID:', bookingId);
-            
-            // Insert into the Sessions table using the bookingId
-            const sessionId = await newSession(client, latestWebhookData, bookingId);
-            console.log('Session ID:', sessionId);
-
-
-           
-            if(latestWebhookData.eventName === 'order.update'){
-
-            // Insert into the Sessions table using the bookingId
-            const schoolId = await newSchool(client, latestWebhookData);
-            console.log('School ID:', schoolId);
-            
-            
-            
-            // Insert into the Sessions table using the bookingId
-            const youthExperienceId = await newYouthExperience(client, latestWebhookData, sessionId, schoolId);
-            console.log('youth Experience ID:', youthExperienceId);
-
-            // Insert into the teacher table using the schoolID
-            const teacherId = await newTeacher(client, latestWebhookData, schoolId);
-            console.log('Teacher ID:', teacherId);
-
-            
-            // Insert into the classes table using the schoolID, sessionID
-            const classId = await newClass(client, latestWebhookData, schoolId, sessionId);
-            console.log('Class ID:', classId);
-
-
-            // Insert into the classes table using the schoolID, sessionID
-            const classTeacherId = await newClassTeacher(client, classId, teacherId);
-            console.log('ClasTeacher ID:', classId);
             }
-            
- */
-
-
-        
-
-    
             await client.query('COMMIT');
         } catch (error) {
             console.error('Error during transaction:', error);
@@ -599,650 +490,36 @@ app.post('/webhook', async(req, res) => {
         }
     }
 
-
-// Function to insert data into the Invoices table
-const newInvoice = async (client, data) => {
-    let invoiceId = null; // Define invoiceId outside the try block
-  
-    try {
-      // Check if the event is 'order.create'
-      if (data.eventName !== 'order.create') {
-        console.log("Event is not 'order.create'; skipping insertion.");
-        return ;
-      }
-  
-      const insertQuery = `
-        INSERT INTO prabincpaws.Invoices (
-          InvoiceNumber, Amount, DateSent, isPaid, PaymentMethod, Notes, lastUpdated
-        )
-        VALUES ($1, $2, $3, $4, $5, $6, NOW())
-        RETURNING ID
-      `;
-  
-      const result = await client.query(insertQuery, [
-        null,                  // Replace with actual invoice number if available
-        data.amount,          // Amount for the invoice
-        null,        // Date sent for the invoice
-        data.isPaid || false, // Payment status (default to false)
-        data.paymentMethod,    // Payment method for the invoice
-        null     // Notes (allow null if not provided)
-      ]);
-  
-      // Check if the insertion returned a new ID
-      if (result.rows.length > 0) {
-        invoiceId = result.rows[0].id; // Use uppercase 'ID'
-        console.log(`New invoice inserted with ID: ${invoiceId}`);
-      } else {
-        console.error('Failed to insert new invoice: No ID returned.');
-      }
-    } catch (error) {
-      console.error('Error processing invoice:', error);
-    }
-  
-    return invoiceId; // Return the invoice ID
-  };
-  
-
-  // Function to insert or update bookings in the Bookings table
-const newBookings = async (client, data, invoiceId) => {
-    try {
-      // Ensure invoiceId is logged for debugging
-      console.log("Provided invoice ID:", invoiceId);
-  
-      // Check if the event is 'order.create' or 'order.update'
-      if (data.eventName === 'order.create') {
-        // Insert a new booking
-        const insertQuery = `
-          INSERT INTO prabincpaws.Bookings (
-            XolaBookingID, ExperienceID, InvoiceID, contactName, contactEmail, contactPhone, lastUpdated
-          )
-          VALUES ($1, $2, $3, $4, $5, $6, NOW())
-          RETURNING ID
-        `;
-  
-        const result = await client.query(insertQuery, [
-          data.id,    // XolaBookingID for the new booking
-          data.ExperiencesID[0],                  // ExperienceID placeholder (replace if needed)
-          invoiceId,             // Existing invoice ID
-          data.customerName,     // Contact name
-          data.customerEmail,    // Contact email
-          data.phone             // Contact phone
-        ]);
-  
-        const bookingId = result.rows[0]?.id; // Retrieve the newly created booking ID
-        console.log(`New booking created with ID: ${bookingId}`);
-        return bookingId; // Return booking ID for 'order.create'
-  
-      } else if (data.eventName === 'order.update') {
-        
-        // Update an existing booking
-        const updateQuery = `
-          UPDATE prabincpaws.Bookings
-          SET 
-            contactName = $1,
-            contactEmail = $2,
-            contactPhone = $3,
-            lastUpdated = NOW()
-          WHERE XolaBookingID = $4
-          RETURNING ID
-        `;
-  
-        const result = await client.query(updateQuery, [
-          data.customerName,     // Updated customer name
-          data.customerEmail,    // Updated customer email
-          data.phone,            // Updated customer phone
-          data.id     // XolaBookingID to find the correct booking
-        ]);
-  
-        if (result.rows.length > 0) {
-          const bookingId = result.rows[0].id; // Retrieve the updated booking ID
-          console.log(`Booking updated with ID: ${bookingId}`);
-          return bookingId; // Return booking ID for 'order.update'
-        } else {
-          console.error('No booking found to update for XolaBookingID:', data.xolaBookingID);
-          return null; // Return null if no booking was updated
-        }
-      } else {
-        console.log("Event is neither 'order.create' nor 'order.update'; skipping operation.");
-        return null;
-      }
-    } catch (error) {
-      console.error('Error processing booking:', error);
-      return null;
-    }
-  };
-
-
-  // Function to insert or update sessions in the Sessions table
-  const newSession = async (client, data, bookingId) => {
-    try {
-        console.log("Calling newSession function with booking ID:", bookingId);
-
-        const sessionIds = []; // Array to store all created/updated session IDs
-
-        for (let i = 0; i < data.ExperiencesID.length; i++) {
-            // Handle order.create
-            if (data.eventName === 'order.create') {
-                for (let j = 0; j < data.Quantity[i]; j++) {
-                    const programLookupQuery = `
-                        SELECT ID FROM prabincpaws.Programs
-                        WHERE name = $1
-                    `;
-
-                    const programResult = await client.query(programLookupQuery, [data.Experiences[i]]);
-                    if (programResult.rows.length === 0) {
-                        throw new Error(`Program not found for experience: ${data.Experiences[i]}`);
-                    }
-                    const programId = programResult.rows[0].id;
-
-                    const insertQuery = `
-                        INSERT INTO prabincpaws.Sessions (
-                            BookingID, ProgramID, Theme, Location, Date, StartTime, EndTime, Notes, ExperienceId
-                        )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                        RETURNING ID
-                    `;
-
-                    const result = await client.query(insertQuery, [
-                        bookingId,
-                        programId,
-                        data.addons1[i] || null,
-                        data.addons2[i] || null,
-                        data.arrivalDate[i],
-                        null,
-                        null,
-                        data.notes[0] || null,
-                        data.ExperiencesID[i]
-                    ]);
-
-                    const sessionId = result.rows[0]?.id;
-                    if (sessionId) {
-                        console.log(`New session created with ID: ${sessionId}`);
-                        sessionIds.push(sessionId); // Store the session ID in the array
-                    }
-                }
-            }
-            // Handle order.update
-            else if (data.eventName === 'order.update') {
-                // Select all existing session IDs for the bookingId and ExperienceId
-                const selectQuery = `
-                    SELECT ID FROM prabincpaws.Sessions
-                    WHERE BookingID = $1 AND ExperienceId = $2
-                `;
-
-                const selectResult = await client.query(selectQuery, [bookingId, data.ExperiencesID[i]]);
-                const existingSessionIds = selectResult.rows.map(row => row.id); // Extract session IDs
-
-                // Update each existing session one at a time
-                for (const sessionId of existingSessionIds) {
-                    const updateQuery = `
-                        UPDATE prabincpaws.Sessions
-                        SET 
-                            Theme = $1,
-                            Location = $2,
-                            Date = $3,
-                            Notes = $4
-                        WHERE ID = $5
-                        RETURNING ID
-                    `;
-
-                    const result = await client.query(updateQuery, [
-                        data.addons1[i],
-                        data.addons2[i],
-                        data.arrivalDate[i],
-                        data.notes[i] || null,
-                        sessionId // Update each specific session by ID
-                    ]);
-
-                    if (result.rows.length > 0) {
-                        const updatedSessionId = result.rows[0].id;
-                        console.log(`Session updated with ID: ${updatedSessionId}`);
-                        sessionIds.push(updatedSessionId); // Store the updated session ID in the array
-                    } else {
-                        console.error('No session found to update for BookingID:', bookingId, 'and ExperienceId:', data.ExperiencesID[i]);
-                    }
-                }
-            } else {
-                console.log("Event is neither 'order.create' nor 'order.update'; skipping operation.");
-            }
-        }
-        return sessionIds; // Return the array of session IDs after all iterations
-    } catch (error) {
-        console.error('Error processing session:', error);
-        return null;
-    }
-};
-
-  
-
-  // Function to insert or update sessions in the Sessions table
-  const newSessionPL = async (client, data, bookingId) => {
-    try {
-      console.log("Calling newSession function with booking ID:", bookingId);
-  
-      const sessionIds = []; // Array to store all created/updated session IDs
-  
-      for (let i = 0; i < data.ExperiencesID.length; i++) {
-          if (data.eventName === 'order.create') {
-            const programLookupQuery = `
-              SELECT ID FROM prabincpaws.Programs
-              WHERE name = $1
-            `;
-  
-            const programResult = await client.query(programLookupQuery, [data.Experiences[i]]);
-            if (programResult.rows.length === 0) {
-              throw new Error(`Program not found for experience: ${data.Experiences[i]}`);
-            }
-            const programId = programResult.rows[0].id;
-  
-            const insertQuery = `
-              INSERT INTO prabincpaws.Sessions (
-                BookingID, ProgramID, Theme, Location, Date, StartTime, EndTime, Notes, ExperienceId
-              )
-              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-              RETURNING ID
-            `;
-  
-            const result = await client.query(insertQuery, [
-              bookingId,
-              programId,
-              data.addons1[i] || null,
-              data.addons2[i] || null,
-              data.arrivalDate[i],
-              null,
-              null,
-              data.notes[0] || null,
-              data.ExperiencesID[i]
-            ]);
-  
-            const sessionId = result.rows[0]?.id;
-            if (sessionId) {
-              console.log(`New session created with ID: ${sessionId}`);
-              sessionIds.push(sessionId); // Store the session ID in the array
-            }
-          } else if (data.eventName === 'order.update') {
-            const updateQuery = `
-              UPDATE prabincpaws.Sessions
-              SET 
-                Theme = $1,
-                Location = $2,
-                Date = $3,
-                Notes = $4
-              WHERE BookingID = $5 AND ExperienceId = $6
-              RETURNING ID
-            `;
-  
-            const result = await client.query(updateQuery, [
-              data.addons1[i],
-              data.addons2[i],
-              data.arrivalDate[i],
-              data.notes[i] || null,
-              bookingId,
-              data.ExperiencesID[i]
-            ]);
-  
-            if (result.rows.length > 0) {
-              const sessionId = result.rows[0].id;
-              console.log(`Session updated with ID: ${sessionId}`);
-              sessionIds.push(sessionId); // Store the session ID in the array
-            } else {
-              console.error('No session found to update for BookingID:', bookingId, 'and ExperienceId:', data.ExperiencesID[i]);
-            }
-          } else {
-            console.log("Event is neither 'order.create' nor 'order.update'; skipping operation.");
-          }
-        }
-      return sessionIds; // Return the array of session IDs after all iterations
-    } catch (error) {
-      console.error('Error processing session:', error);
-      return null;
-    }
-  };
-  
-  const newProfessionalLearning = async (client, data, sessionIds) => {
-    const professionalLearningIds = []; // Array to store IDs of inserted/updated rows
-
-    try {
-        console.log("Calling newProfessionalLearning function with session IDs:", sessionIds);
-
-        for (let i = 0; i < data.ExperiencesID.length; i++) {
-            const sessionId = sessionIds[i]; // Use each sessionId based on index
-
-            if (data.eventName === 'order.create') {
-                const insertQuery = `
-                    INSERT INTO prabincpaws.ProfessionalLearning (
-                        SessionID, NumberofParticipants, Organization, MeetingTime, MeetingLocation, SpecialNeeds, OtherDetails
-                    )
-                    VALUES ($1, $2, $3, $4, $5, $6, $7)
-                    RETURNING ID
-                `;
-
-                const result = await client.query(insertQuery, [
-                    sessionId,
-                    data.Quantity[i] || null,
-                    null, // Organization
-                    null, // Meeting Time
-                    null, // Meeting Location
-                    null, // Special Needs
-                    null  // Other Details
-                ]);
-
-                const professionalLearningId = result.rows[0]?.id;
-                console.log(`New professional learning created with ID: ${professionalLearningId}`);
-                professionalLearningIds.push(professionalLearningId);
-
-            } else if (data.eventName === 'order.update') {
-                const updateQuery = `
-                    UPDATE prabincpaws.ProfessionalLearning
-                    SET 
-                        NumberofParticipants = $1,
-                        Organization = $2,
-                        MeetingTime = $3,
-                        MeetingLocation = $4,
-                        SpecialNeeds = $5,
-                        OtherDetails = $6
-                    WHERE SessionID = $7
-                    RETURNING ID
-                `;
-
-                const questions = i === 0 ? data.Questions1 : i === 1 ? data.Questions2 : data.Questions3;
-
-
-                const result = await client.query(updateQuery, [
-                    data.Quantity[i] || null,   // Number of Participants
-                    questions[0] || null,       // Organization
-                    questions[1] || null,       // Meeting Time
-                    null,                       // Meeting Location
-                    questions[3] || null,       // Special Needs
-                    questions[2] || null,       // Other Details
-                    sessionId                   // SessionID to find the correct entry
-                ]);
-
-                if (result.rows.length > 0) {
-                    const professionalLearningId = result.rows[0].id;
-                    console.log(`Professional learning updated with ID: ${professionalLearningId}`);
-                    professionalLearningIds.push(professionalLearningId);
-                } else {
-                    console.error('No professional learning found to update for SessionID:', sessionId);
-                }
-            } else {
-                console.log("Event is neither 'order.create' nor 'order.update'; skipping operation.");
-            }
-        }
-
-        return professionalLearningIds;
-
-    } catch (error) {
-        console.error('Error processing professional learning:', error);
-        return null;
-    }
-};
-
-const newSchool = async (client, data) => {
-
-     // Prepare the school name by trimming whitespace and converting to lowercase
-     const schoolName = data.Questions1[1].trim().toLowerCase();
-
-    // First, check if the school already exists
-    const checkSchoolQuery = `
-        SELECT ID FROM prabincpaws.Schools 
-        WHERE Name = $1
-    `;
-    
-    const result = await client.query(checkSchoolQuery, [schoolName]);
-
-    // If the school exists, return the existing ID
-    if (result.rows.length > 0) {
-        console.log(`School found with ID: ${result.rows[0].id}`);
-        return result.rows[0].id;
-    } else {
-        // If not found, insert the new school
-        const insertSchoolQuery = `
-            INSERT INTO prabincpaws.Schools (Name, SchoolBoard, Grades) 
-            VALUES ($1, $2, $3) 
-            RETURNING ID
-        `;
-        
-        const insertResult = await client.query(insertSchoolQuery, [
-            data.Questions1[1],
-            data.Questions1[0],
-            data.Questions1[4]
-        ]);
-        const newSchoolId = insertResult.rows[0].id;
-        console.log(`New school created with ID: ${newSchoolId}`);
-        return newSchoolId;
-    }
-};
-
-async function newYouthExperience(client, data, sessionIds, schoolId) {
-    console.log('handleYouthExperience function is being called with ExperiencesID:', data.ExperiencesID, 'and schoolId:', schoolId);
-
-    try {
-        if (data.eventName === 'order.update') {
-            const youthExperienceIds = []; // Array to store IDs of inserted/updated youth experiences
-
-            let sessionIndex = 0; // Initialize a session index to keep track of sessionIds
-
-            for (let i = 0; i < data.ExperiencesID.length; i++) {
-
-                // Dynamically select the correct Questions array
-                const questions = i === 0 ? data.Questions1 : i === 1 ? data.Questions2 : data.Questions3;
-                const gradesArray = questions[2].split(','); // Split the selected Questions array's grades field by commas
-
-                console.log(gradesArray);
-
-                for (let j = 0; j < data.Quantity[i]; j++) { // Repeat based on the Quantity for the current experience ID
-                    if (sessionIndex >= sessionIds.length) {
-                        console.log("Warning: Insufficient sessionIds for the number of experiences and quantities.");
-                        break; // Break out if there aren't enough sessionIds
-                    }
-
-                    const sessionId = sessionIds[sessionIndex]; // Get the current session ID
-                    
-
-                    // Retrieve the record from YouthExperience table based on sessionId and schoolId
-                    const getYouthExperienceQuery = `
-                        SELECT ID FROM prabincpaws.YouthExperience 
-                        WHERE SessionID = $1 AND SchoolID = $2 
-                        LIMIT 1;
-                    `;
-                    const result = await client.query(getYouthExperienceQuery, [sessionId, schoolId]);
-
-                    console.log('Sesion id being used is ' + sessionId)
-                    sessionIndex++; // Increment the session index for the next iteration
-
-                    if (result.rows.length > 0) {
-                        const youthExperienceId = result.rows[0].id;
-                        console.log(`Found YouthExperience ID for 'order.update': ${youthExperienceId}`);
-                        console.log('grades inserted ' + gradesArray[j]);
-                        youthExperienceIds.push(youthExperienceId); // Add to the array
-                    } else {
-                        console.log('No matching YouthExperience found for the provided SessionID and SchoolID.');
-
-                        // Insert a new record if none exists
-                        const insertYouthExperienceQuery = `
-                            INSERT INTO prabincpaws.YouthExperience 
-                            (SessionID, SchoolID, NumberofClasses, Grades, OtherDetails) 
-                            VALUES ($1, $2, $3, $4, $5) 
-                            RETURNING ID;
-                        `;
-                        const insertResult = await client.query(insertYouthExperienceQuery, [
-                            sessionId,
-                            schoolId,
-                            data.Quantity[i],                          // Class number or repetition count within Quantity
-                            gradesArray[j] || null,         // Use the grade for the current experience ID
-                            null                            // Other Details (e.g., school board or other information)
-                        ]);
-
-                        const newYouthExperienceId = insertResult.rows[0].id;
-                        console.log(`New YouthExperience created with ID: ${newYouthExperienceId}`);
-                        youthExperienceIds.push(newYouthExperienceId); // Add to the array
-                    }
-
-                }
-            }
-
-            return youthExperienceIds; // Return the array of IDs
-        } else {
-            console.log('Event is not order.update; no action taken.');
-            return null; // Optional: return null if event name doesn't match
-        }
-    } catch (error) {
-        console.error('Error while handling YouthExperience data:', error.message || error);
-        throw error; // Rethrow the error to be handled by the caller
-    }
-}
-
-
-async function newTeacher(client, data, schoolId) {
-
-    console.log('newTeacher function is being called with schoolId ' + schoolId);
-
-
-        // Validate customer name
-    if (!data.customerName) {
-        throw new Error("Customer name is required.");
-    }
-    
-        const nameParts = data.customerName.split(" ");
-        const firstName = nameParts[0];
-        const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : null;
-
-    try {
-        // Check if the teacher already exists in the database
-        const existingTeacherQuery = `
-            SELECT ID FROM prabincpaws.Teachers 
-            WHERE FirstName = $1 AND LastName = $2
-        `;
-        const existingTeacherResult = await client.query(existingTeacherQuery, [firstName, lastName]);
-
-        // If the teacher exists, return their ID
-        if (existingTeacherResult.rows.length > 0) {
-            const teacherId = existingTeacherResult.rows[0].id;
-            console.log(`Teacher exists. Teacher ID: ${teacherId}`);
-            return teacherId;
-        }
-
-        // If the teacher does not exist, insert a new teacher record
-        const insertTeacherQuery = `
-            INSERT INTO prabincpaws.Teachers (SchoolID, Title, FirstName, LastName, Email, Phone)
-            VALUES ($1, $2, $3, $4, $5, $6) RETURNING ID
-        `;
-        const insertResult = await client.query(insertTeacherQuery, [
-            schoolId,
-            null,
-            firstName,
-            lastName,
-            data.customerEmail,
-            data.phone
-        ]);
-
-        const newTeacherId = insertResult.rows[0].id;
-        console.log(`New teacher inserted. Teacher ID: ${newTeacherId}`);
-        return newTeacherId;
-
-    } catch (error) {
-        console.error('Error while handling teacher data:', error);
-        throw error; // Rethrow the error to be handled by the caller
-    }
-}
-
-async function newClass(client, data, schoolId, sessionId) {
-    console.log(`newClass function is being called with schoolId: ${schoolId} and sessionId: ${sessionId}`);
-
-    try {
-        if (data.eventName === 'order.update') {
-            // Check if a class exists for the given SchoolID and SessionID
-            const getClassBySessionAndSchoolQuery = `
-                SELECT ID FROM prabincpaws.Classes 
-                WHERE SchoolID = $1 AND SessionID = $2 
-                LIMIT 1;
-            `;
-            const getClassValues = [schoolId, sessionId];
-            const result = await client.query(getClassBySessionAndSchoolQuery, getClassValues);
-
-            if (result.rows.length > 0) {
-                const classId = result.rows[0].id;
-                console.log(`Found class ID for 'order.update': ${classId}`);
-                return classId;
-            } else {
-                console.log('No matching class found for the provided SchoolID and SessionID. Inserting new class record.');
-
-                // Insert a new class record if no match is found
-                const currentYear = new Date().getFullYear();
-                const insertClassQuery = `
-                    INSERT INTO prabincpaws.Classes (SchoolID, Grade, NumberofStudents, AcademicYear, EnvironmentalAction, Notes, SessionID)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING ID;
-                `;
-                const insertResult = await client.query(insertClassQuery, [
-                    schoolId,
-                    data.Questions1[2],      // Assuming Questions1[2] is Grade
-                    data.Questions1[3],      // Assuming Questions1[3] is NumberofStudents
-                    currentYear,             // AcademicYear set to the current year
-                    false,                   // EnvironmentalAction set to false
-                    null,                    // Notes set to null
-                    sessionId
-                ]);
-
-                const newClassId = insertResult.rows[0].id;
-                console.log(`New class created. Class ID: ${newClassId}`);
-                return newClassId;
-            }
-        } else {
-            console.log('Event is not order.update; no action taken.');
-            return null;  // Optional: return null if the event name is not order.update
-        }
-    } catch (error) {
-        console.error('Error while handling class data:', error.message || error);
-        throw error; // Rethrow the error to be handled by the caller
-    }
-}
-
-
-
-async function newClassTeacher(client, classId, teacherId) {
-    console.log('Inserting or retrieving classTeachers ID for Class ID:', classId, 'Teacher ID:', teacherId);
-
-    try {
-        // Query to check if the combination of classId and teacherId already exists
-        const checkClassTeacherQuery = `
-            SELECT ID FROM prabincpaws.classTeachers 
-            WHERE ClassID = $1 AND TeacherID = $2
-            LIMIT 1;
-        `;
-        const checkResult = await client.query(checkClassTeacherQuery, [classId, teacherId]);
-
-        if (checkResult.rows.length > 0) {
-            // If an entry exists, return the existing classTeachers ID
-            const existingClassTeacherId = checkResult.rows[0].id;
-            console.log(`Found existing classTeachers ID: ${existingClassTeacherId}`);
-            return existingClassTeacherId;
-        } else {
-            // If no entry exists, insert a new record
-            const insertClassTeacherQuery = `
-                INSERT INTO prabincpaws.classTeachers (ClassID, TeacherID)
-                VALUES ($1, $2) RETURNING ID;
-            `;
-            const insertResult = await client.query(insertClassTeacherQuery, [classId, teacherId]);
-            const newClassTeacherId = insertResult.rows[0].id;
-            console.log(`New classTeachers entry created with ID: ${newClassTeacherId}`);
-            return newClassTeacherId;
-        }
-    } catch (error) {
-        console.error('Error while inserting or retrieving classTeachers data:', error);
-        throw error;
-    }
-}
-
-
-
 //For saltcorn schema
 // new nov 7
 const Invoice = async (client, data) => {
     let invoiceId = null; // Initialize invoiceId as null
     
     try {
-  
+
+            // Check if the event name is 'order.cancel' and update isDeleted if true
+            if (data.eventName === 'order.cancel') {
+                const cancelInvoiceQuery = `
+                    UPDATE saltcorn.invoices
+                    SET isDeleted = true, lastUpdated = NOW()
+                    WHERE XolaBookingID = $1
+                    RETURNING ID
+                `;
+    
+                const cancelResult = await client.query(cancelInvoiceQuery, [data.id]);
+    
+                if (cancelResult.rows.length > 0) {
+                    invoiceId = cancelResult.rows[0].id;
+                    console.log(`Invoice canceled with ID: ${invoiceId}`);
+                    return invoiceId;
+                } else {
+                    console.log(`No invoice found with XolaBookingID: ${data.id} to cancel.`);
+                    return null;
+                }
+            }
+
+        if (data.eventName === 'order.update')  {  
+    
       // Step 1: Check if the invoice already exists using XolaBookingID
       const checkInvoiceQuery = `
         SELECT ID FROM saltcorn.invoices
@@ -1260,9 +537,9 @@ const Invoice = async (client, data) => {
         // Step 2: If the invoice doesn't exist, insert a new row and return the new ID
         const insertQuery = `
           INSERT INTO saltcorn.invoices (
-            XolaBookingID, InvoiceNumber, Amount, InvoiceDate, paymentType, PaymentMethod, Notes, lastUpdated, isPaid, isDeleted
+            XolaBookingID, InvoiceNumber, Amount, InvoiceDate, paymentType, PaymentMethod, Notes, isPaid, isActive
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), $8, $9)
+          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
           RETURNING ID
         `;
         
@@ -1273,9 +550,9 @@ const Invoice = async (client, data) => {
           null,                 // InvoiceDate (use actual date or null)
           null,                 // PaymentType (default to null)
           data.paymentMethod,   // PaymentMethod
-          data.notes || null,   // Notes (default to null if not provided)
+          data.notes[0],   // Notes (default to null if not provided)
           false,                // isPaid (default to false)
-          false                 // isDeleted (default to false)
+          true                 // isDeleted (default to false)
         ]);
   
         // Check if the insertion returned a new ID
@@ -1286,6 +563,7 @@ const Invoice = async (client, data) => {
           console.error('Failed to insert new invoice: No ID returned.');
         }
       }
+    }
     } catch (error) {
       console.error('Error processing invoice:', error);
     }
@@ -1293,16 +571,13 @@ const Invoice = async (client, data) => {
     return invoiceId; // Return the invoice ID (either existing or newly created)
   };
   
-
-
-  const getOrganizationId = async (client, data) => {
+const getOrganizationId = async (client, data) => {
     let organizationId = null;
   
     try {
         // Check if data.Questions1 and data.Questions1[0] are defined to prevent TypeError
         const organizationName = data.Questions1 && data.Questions1[0]
-            ? data.Questions1[0].trim().toLowerCase()
-            : null;
+            ? data.Questions1[0].trim(): null;
 
         // If organizationName is null or empty, log an error and return null
         if (!organizationName) {
@@ -1310,7 +585,7 @@ const Invoice = async (client, data) => {
             return organizationId;
         }
 
-        if (data.eventName === 'order.create') {
+        if (data.eventName !== 'order.update') {
             // If the event is 'order.create', return null as no organization is associated yet
             console.log("Event is 'order.create'; returning null for organizationId.");
             return organizationId;
@@ -1324,7 +599,7 @@ const Invoice = async (client, data) => {
                 SELECT id FROM saltcorn.organizations WHERE name = $1;
             `;
   
-            const result = await client.query(organizationQuery, [organizationName]);
+            const result = await client.query(organizationQuery, [organizationName.toLowerCase()]);
   
             if (result.rows.length > 0) {
                 // If the organization exists, return the existing organizationId
@@ -1333,15 +608,14 @@ const Invoice = async (client, data) => {
             } else {
                 // If the organization does not exist, insert a new organization and return the new organizationId
                 const insertQuery = `
-                    INSERT INTO saltcorn.organizations (name, isActive, isDeleted)
-                    VALUES ($1, $2, $3)
+                    INSERT INTO saltcorn.organizations (name, isActive)
+                    VALUES ($1, $2)
                     RETURNING id;
                 `;
   
                 const insertResult = await client.query(insertQuery, [
                     organizationName, // organization name
-                    true,             // isActive
-                    false             // isDeleted
+                    true             // isActive
                 ]);
                 
                 organizationId = insertResult.rows[0].id;
@@ -1360,7 +634,7 @@ const getSchoolId = async (client, data) => {
     let schoolId = null; // Initialize schoolId as null
     
     try {
-      if (data.eventName === 'order.create') {
+      if (data.eventName !== 'order.update') {
         // If the event is 'order.create', return null as no school is associated yet
         console.log("Event is 'order.create'; returning null for schoolId.");
         return schoolId;  // Return null
@@ -1368,7 +642,7 @@ const getSchoolId = async (client, data) => {
     
       if (data.eventName === 'order.update') {
         // Prepare the school name by trimming whitespace and converting to lowercase
-        const schoolName = data.Questions1[1].trim().toLowerCase();
+        const schoolName = data.Questions1[1].trim();
         const schoolBoardName = data.Questions1[0].trim().toLowerCase(); // School board name
           
         // Step 1: Look up the schoolBoardId by the school board name
@@ -1393,7 +667,7 @@ const getSchoolId = async (client, data) => {
           WHERE LOWER(Name) = $1 AND SchoolBoardId = $2
         `;
     
-        const result = await client.query(checkSchoolQuery, [schoolName, schoolBoardId]);
+        const result = await client.query(checkSchoolQuery, [schoolName.toLowerCase(), schoolBoardId]);
     
         // If the school exists, return the existing ID
         if (result.rows.length > 0) {
@@ -1411,7 +685,7 @@ const getSchoolId = async (client, data) => {
           const insertResult = await client.query(insertSchoolQuery, [
             schoolName,         // School name
             schoolBoardId,      // School board ID
-            data.Questions1[4]  // Grades
+            data.Questions1[2]  // Grades
           ]);
     
           schoolId = insertResult.rows[0].id;
@@ -1426,89 +700,114 @@ const getSchoolId = async (client, data) => {
     return schoolId; // Return the schoolId (either existing or newly created)
   };
 
- 
-  const Contacts = async (client, data, schoolId, organizationId) => {
-    let contactId = null; // Initialize contactId as null
+const Contacts = async (client, data, schoolId, organizationId) => {
+    let contactId = null;
 
-    const nameParts = data.customerName.split(" ");
-    const firstName = nameParts[0];
-    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(" ") : null;
+    const trimmedName = data.customerName.trim();
 
     try {
-        // Step 1: Check if the contact already exists using XolaBookingID
-        const checkContactQuery = `
-            SELECT ID, schoolId FROM saltcorn.Contacts
-            WHERE XolaBookingID = $1
-        `;
-        
-        const contactResult = await client.query(checkContactQuery, [data.id]);
-
-        // If the contact exists, update the schoolId if necessary
-        if (contactResult.rows.length > 0) {
-            contactId = contactResult.rows[0].id;
-            console.log(`Contact found with ID: ${contactId}`);
-
-            // Check if the current schoolId is different from the new one
-            if (contactResult.rows[0].schoolId !== schoolId) {
-                const updateSchoolQuery = `
-                    UPDATE saltcorn.Contacts
-                    SET schoolId = $1
-                    WHERE ID = $2
-                    RETURNING ID
-                `;
-
-                const updateResult = await client.query(updateSchoolQuery, [schoolId, contactId]);
-
-                if (updateResult.rows.length > 0) {
-                    console.log(`Updated schoolId for contact with ID: ${contactId}`);
-                } else {
-                    console.error(`Failed to update schoolId for contact with ID: ${contactId}`);
-                }
-            }
-
-            return contactId;
-        } else {
-            // Step 2: If the contact doesn't exist, insert a new row and return the new ID
-            const insertContactQuery = `
-                INSERT INTO saltcorn.Contacts 
-                (XolaBookingID, FirstName, LastName, Email, phone, isTeacher, isActive, schoolId, organizationId)
-                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        // Handle 'order.cancel' event
+        if (data.eventName === 'order.cancel') {
+            const deactivateContactQuery = `
+                UPDATE saltcorn.Contacts
+                SET isActive = false
+                WHERE XolaBookingID = $1
                 RETURNING ID
             `;
+    
+            const deactivateResult = await client.query(deactivateContactQuery, [data.id]);
+    
+            if (deactivateResult.rows.length > 0) {
+                contactId = deactivateResult.rows[0].id;
+                console.log(`Contact deactivated with ID: ${contactId}`);
+                return contactId;
+            } else {
+                console.log(`No contact found with XolaBookingID: ${data.id} to deactivate.`);
+                return null;
+            }
+        }
+
+        // Handle 'order.update' event
+        if (data.eventName === 'order.update') {
+            // Use schoolId if available, otherwise fall back to organizationId
+            const SOid = schoolId || organizationId;
+            console.log(`SOid is ${schoolId ? 'schoolId' : 'organizationId'}: ${SOid}`);
+
+            // Step 1: Check if the contact exists based on firstName, lastName, and SOid
+            const checkContactQuery = `
+                SELECT ID FROM saltcorn.Contacts
+                WHERE LOWER(fullName) = $1 
+                AND (schoolId = $2 OR organizationId = $2)
+            `;
             
-            const insertResult = await client.query(insertContactQuery, [
-                data.id,              // XolaBookingID
-                firstName,            // FirstName
-                lastName,             // LastName
-                data.customerEmail,   // Email 
-                data.phone || null,   // PhoneNumber (nullable)
-                true,                 // isTeacher (default as needed)
-                true,                 // isActive (default as needed)
-                schoolId,             // schoolId (nullable)
-                organizationId        // organizationId (nullable)
-            ]);
-            
-            contactId = insertResult.rows[0].id;
-            console.log(`New contact created with ID: ${contactId}`);
-            return contactId;
+            const contactResult = await client.query(checkContactQuery, [trimmedName.toLowerCase(), SOid]);
+
+            if (contactResult.rows.length > 0) {
+                contactId = contactResult.rows[0].id;
+                console.log(`Contact found with ID: ${contactId}`);
+                return contactId;
+            } else {
+                // Step 2: If the contact doesn't exist, insert a new row and return the new ID
+                const insertContactQuery = `
+                    INSERT INTO saltcorn.Contacts 
+                    (XolaBookingID, fullName, Email, phone, isTeacher, isActive, schoolId, organizationId)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                    RETURNING ID
+                `;
+                
+                const insertResult = await client.query(insertContactQuery, [
+                    data.id,
+                    trimmedName,
+                    data.customerEmail,
+                    data.phone,
+                    true,         // isTeacher
+                    true,         // isActive
+                    schoolId,     // schoolId
+                    organizationId // organizationId
+                ]);
+                
+                contactId = insertResult.rows[0].id;
+                console.log(`New contact created with ID: ${contactId}`);
+                return contactId;
+            }
         }
     } catch (error) {
         console.error("Error processing contact:", error);
     }
-
-    return contactId;  // Return the contactId (either existing or newly created)
+    return contactId;
 };
 
-  
-  
-
-
-const Booking = async (client, data, invoiceId, contactId ) => {
+const Booking = async (client, data, invoiceId, contactId, classNum ) => {
     let bookingId = null;  // Initialize bookingId as null
   
     try {
 
         console.log("Booking function is being called with contact ID: " + contactId)
+
+
+        // Check if the event name is 'order.cancel' and update isDeleted if true
+        if (data.eventName === 'order.cancel') {
+            const cancelBookingQuery = `
+                UPDATE saltcorn.Bookings
+                SET isDeleted = true, lastUpdated = NOW()
+                WHERE XolaBookingID = $1
+                RETURNING ID
+            `;
+
+            const cancelResult = await client.query(cancelBookingQuery, [data.id]);
+
+            if (cancelResult.rows.length > 0) {
+                bookingId = cancelResult.rows[0].id;
+                console.log(`Booking canceled with ID: ${bookingId}`);
+                return bookingId;
+            } else {
+                console.log(`No booking found with XolaBookingID: ${data.id} to cancel.`);
+                return null;
+            }
+        }
+
+        if (data.eventName === 'order.update'){
+
       // Step 1: Check if the booking already exists using XolaBookingID
       const checkBookingQuery = `
         SELECT ID FROM saltcorn.Bookings
@@ -1526,9 +825,9 @@ const Booking = async (client, data, invoiceId, contactId ) => {
         // Step 2: If the booking doesn't exist, insert a new row and return the new ID
         const insertBookingQuery = `
           INSERT INTO saltcorn.Bookings (
-            XolaBookingID, ExperienceID, InvoiceID, ContactID, NumberofClasses, lastUpdated, isDeleted
+            XolaBookingID, ExperienceID, InvoiceID, ContactID, NumberofClasses, isActive, Notes
           )
-          VALUES ($1, $2, $3, $4, $5, NOW(), $6) 
+          VALUES ($1, $2, $3, $4, $5, $6, $7) 
           RETURNING ID
         `;
         
@@ -1537,14 +836,16 @@ const Booking = async (client, data, invoiceId, contactId ) => {
           data.ExperiencesID[0],          // ExperienceID
           invoiceId,      // InvoiceID (nullable)
           contactId,      // ContactID (nullable)
-          data.Quantity[0],        // Number of Classes
-          false
+          classNum,        // Number of Classes
+          true,
+          data.notes[0]
         ]);
         
         bookingId = insertResult.rows[0].id;
         console.log(`New booking created with ID: ${bookingId}`);
         return bookingId;
       }
+    }
     } catch (error) {
       console.error("Error processing booking:", error);
     }
@@ -1552,12 +853,17 @@ const Booking = async (client, data, invoiceId, contactId ) => {
     return bookingId;  // Return the bookingId (either existing or newly created)
   };
   
-  const getThemes = async (client, data) => {
+const getThemes = async (client, data) => {
     const themeIds = []; // Array to store all theme IDs
 
     try {
         for (let i = 0; i < data.ExperiencesID.length; i++) {
-            const themeName = data.addons1[i] ? data.addons1[i].trim().toLowerCase() : null;
+            const themeName = data.addons1[i]? data.addons1[i]
+        .split('(')[0]            // Try splitting at '(' first
+        .split('-')[0]            // Only if no '(' was found, split at '-'
+        .trim(): null;
+
+            console.log('Theme selected is: '+ themeName);
 
             if (!themeName) {
                 console.log(`Theme name missing or invalid for ExperienceID at index ${i}. Skipping this entry.`);
@@ -1570,7 +876,7 @@ const Booking = async (client, data, invoiceId, contactId ) => {
                 WHERE LOWER(Name) = $1
             `;
             
-            const themeResult = await client.query(checkThemeQuery, [themeName]);
+            const themeResult = await client.query(checkThemeQuery, [themeName.toLowerCase()]);
 
             // If the theme exists, retrieve the existing ID
             let themeId;
@@ -1600,18 +906,19 @@ const Booking = async (client, data, invoiceId, contactId ) => {
     return themeIds;  // Return array of theme IDs
 };
 
-
-
 const getLocations = async (client, data) => {
   const locationIds = []; // Array to store all location IDs
 
   try {
       for (let i = 0; i < data.ExperiencesID.length; i++) {
           // Check if addons2[i] exists and is a non-empty string
-          const locationName = data.addons2[i] ? data.addons2[i].trim().toLowerCase() : null;
+          const locationName = data.addons2[i]? data.addons2[i].split('(')[0]            // Try splitting at '(' first
+        .split('-')[0]            // Only if no '(' was found, split at '-'
+        .trim(): null;
 
           if (!locationName) {
               console.log(`Location name missing or invalid for ExperienceID at index ${i}. Skipping this entry.`);
+              locationIds.push(null); // Push null to locationIds               
               continue; // Skip this iteration if locationName is null or invalid
           }
 
@@ -1621,7 +928,7 @@ const getLocations = async (client, data) => {
               WHERE LOWER(Name) = $1
           `;
           
-          const locationResult = await client.query(checkLocationQuery, [locationName]);
+          const locationResult = await client.query(checkLocationQuery, [locationName.toLowerCase()]);
 
           // If the location exists, retrieve the existing ID
           let locationId;
@@ -1647,19 +954,15 @@ const getLocations = async (client, data) => {
   } catch (error) {
       console.error("Error processing location:", error);
   }
-
   return locationIds;  // Return array of location IDs
 };
-
-
-
 
 const getPrograms = async (client, data) => {
   const programIds = []; // Array to store all program IDs
 
   try {
       for (let i = 0; i < data.ExperiencesID.length; i++) {
-          const programName = data.Experiences[i] ? data.Experiences[i].trim().toLowerCase() : null;
+          const programName = data.Experiences[i] ? data.Experiences[i].trim() : null;
 
           if (!programName) {
               console.log(`Program name missing or invalid for ExperienceID at index ${i}. Skipping this entry.`);
@@ -1672,7 +975,7 @@ const getPrograms = async (client, data) => {
               WHERE LOWER(Name) = $1
           `;
           
-          const programResult = await client.query(checkProgramQuery, [programName]);
+          const programResult = await client.query(checkProgramQuery, [programName.toLowerCase()]);
 
           // If the program exists, retrieve the existing ID
           let programId;
@@ -1698,19 +1001,32 @@ const getPrograms = async (client, data) => {
   } catch (error) {
       console.error("Error processing program:", error);
   }
-
   return programIds;  // Return array of program IDs
 };
-
-
-
 
 const Classes = async (client, data, bookingId, programIds, themeIds, locationIds) => {
   const classIds = []; // Array to store created or updated class IDs
 
   try {
-      // If the event is 'order.create'
-      if (data.eventName === 'order.create') {
+      // Always handle 'order.update' events
+      // Lookup all classes with the same BookingID
+      const selectClassesQuery = `
+          SELECT ID FROM saltcorn.Classes
+          WHERE BookingID = $1
+      `;
+
+      const selectResult = await client.query(selectClassesQuery, [bookingId]);
+
+      if (selectResult.rows.length > 0) {
+          // If classes are found, gather all the class IDs for the given BookingID
+          for (const row of selectResult.rows) {
+              classIds.push(row.id);
+          }
+          console.log(`Found ${selectResult.rows.length} class(es) with BookingID: ${bookingId}`);
+      } else {
+          // If no classes found, proceed with insertion logic
+          console.log(`No classes found with BookingID: ${bookingId}. Creating new classes.`);
+
           // Loop over each experience and its quantity
           for (let i = 0; i < data.ExperiencesID.length; i++) {
               for (let j = 0; j < data.Quantity[i]; j++) {
@@ -1732,9 +1048,9 @@ const Classes = async (client, data, bookingId, programIds, themeIds, locationId
                       data.arrivalDate[i],       // Date
                       null,                      // StartTime
                       null,                      // EndTime
-                      null,                      // isYouthExperience
-                      null,                      // isProfessionalLearning
-                      data.notes[0]             // Notes (by index)
+                      true,                      // isYouthExperience
+                      false,                      // isProfessionalLearning
+                      data.notes[0]              // Notes (by index)
                   ]);
 
                   // Add the created class ID to the array if it was successfully inserted
@@ -1747,30 +1063,6 @@ const Classes = async (client, data, bookingId, programIds, themeIds, locationId
                   }
               }
           }
-      } 
-
-      // If the event is 'order.update'
-      else if (data.eventName === 'order.update') {
-          // Lookup all classes with the same BookingID
-          const selectClassesQuery = `
-              SELECT ID FROM saltcorn.Classes
-              WHERE BookingID = $1
-          `;
-
-          const selectResult = await client.query(selectClassesQuery, [bookingId]);
-
-          if (selectResult.rows.length > 0) {
-              // If classes are found, gather all the class IDs for the given BookingID
-              for (const row of selectResult.rows) {
-                  classIds.push(row.id);
-              }
-
-              console.log(`Found ${selectResult.rows.length} class(es) with BookingID: ${bookingId}`);
-          } else {
-              console.log(`No classes found with BookingID: ${bookingId}`);
-          }
-      } else {
-          console.log("Event is neither 'order.create' nor 'order.update'; skipping operation.");
       }
 
       return classIds; // Return the array of created or updated class IDs
@@ -1780,324 +1072,259 @@ const Classes = async (client, data, bookingId, programIds, themeIds, locationId
   }
 };
 
+
 const YouthExperienceClasses = async (client, data, classIds, schoolId) => {
-  const youthExperienceClassIds = []; // Array to store created or retrieved YouthExperienceClass IDs
-
-  try {
-      // Get the current year as a date in YYYY-01-01 format for AcademicYear
-      const currentYearDate = `${new Date().getFullYear()}`;
-      let classIndex = 0; // Start the classIndex at 0
-
-      if (data.eventName === 'order.create') {
-          // Loop over each experience and its quantity
-          for (let i = 0; i < data.ExperiencesID.length; i++) {
-              const questions = i === 0 ? data.Questions1 : i === 1 ? data.Questions2 : data.Questions3;
-
-              // Check if questions and Quantity are defined
-              if (!questions || !Array.isArray(questions) || data.Quantity[i] === undefined) {
-                  console.log(`Questions or quantity for experience at index ${i} is missing or undefined. Skipping.`);
-                  continue;
-              }
-
-              const quantity = data.Quantity[i] || 0;
-
-              for (let j = 0; j < quantity; j++) {
-                  console.log('classIndex: ' + classIndex);
-                  if (classIndex >= classIds.length) {
-                      console.error(`classIds is out of bounds for experience index ${i}. Skipping.`);
-                      continue;
-                  }
-
-                  const insertYouthClassQuery = `
-                      INSERT INTO saltcorn.YouthExperienceClasses (ClassID)
-                      VALUES ($1)
-                      RETURNING ID
-                  `;
-
-                  const insertResult = await client.query(insertYouthClassQuery, [
-                      classIds[classIndex]
-                  ]);
-
-                  classIndex++;
-
-                  if (insertResult.rows.length > 0) {
-                      const youthExperienceClassId = insertResult.rows[0].id;
-                      youthExperienceClassIds.push(youthExperienceClassId);
-                      console.log(`New YouthExperienceClass created with ID: ${youthExperienceClassId}`);
-                  } else {
-                      console.error('Failed to insert new YouthExperienceClass: No ID returned.');
-                  }
-              }
-          }
-          return youthExperienceClassIds;
-      } 
-      
-      else if (data.eventName === 'order.update') {
-          for (let i = 0; i < data.ExperiencesID.length; i++) {
-              const questions = i === 0 ? data.Questions1 : i === 1 ? data.Questions2 : data.Questions3;
-
-              if (!questions || !Array.isArray(questions) || data.Quantity[i] === undefined) {
-                  console.log(`Questions or quantity for experience at index ${i} is missing or undefined. Skipping.`);
-                  continue;
-              }
-
-              const gradesArray = questions[2] ? questions[2].split(',') : [];
-              const studentNum = questions[4] ? questions[4].split(',') : [];
-              const quantity = data.Quantity[i] || 0;
-
-              for (let j = 0; j < quantity; j++) {
-                  console.log('classIndex update: ' + classIndex);
-                  if (classIndex >= classIds.length) {
-                      console.error(`classIds is out of bounds for experience index ${i}. Skipping.`);
-                      continue;
-                  }
-
-                  const selectQuery = `
-                      SELECT ID FROM saltcorn.YouthExperienceClasses
-                      WHERE ClassID = $1
-                  `;
-
-                  const selectResult = await client.query(selectQuery, [classIds[classIndex]]);
-
-                  if (selectResult.rows.length > 0) {
-                      const youthClassId = selectResult.rows[0].id;
-                      const updateQuery = `
-                          UPDATE saltcorn.YouthExperienceClasses
-                          SET 
-                              SchoolID = $1,
-                              NumberofStudents = $2,
-                              Grades = $3,
-                              AcademicYear = $4,
-                              EnvironmentalAction = $5,
-                              OtherDetails = $6
-                          WHERE ID = $7
-                          RETURNING ID
-                      `;
-
-                      const updateResult = await client.query(updateQuery, [
-                          schoolId,
-                          studentNum[j],
-                          gradesArray[j],
-                          currentYearDate,
-                          false,
-                          `Schedule list:${questions[5]} Teacher list: ${questions[3]}` || null,
-                          youthClassId
-                      ]);
-
-                      classIndex++;
-
-                      if (updateResult.rows.length > 0) {
-                          console.log(`YouthExperienceClass updated with ID: ${youthClassId}`);
-                          youthExperienceClassIds.push(youthClassId);
-                      } else {
-                          console.error(`Failed to update YouthExperienceClass with ID: ${youthClassId}`);
-                      }
-                  } else {
-                      console.log(`No existing YouthExperienceClass records found for ClassID: ${classIds[classIndex]}. Skipping update.`);
-                  }
-              }
-          }
-          return youthExperienceClassIds;
-      } 
-
-      else {
-          console.log("Event is neither 'order.create' nor 'order.update'; skipping operation.");
-          return null;
-      }
-  } catch (error) {
-      console.error("Error processing YouthExperienceClass creation/update:", error);
-  }
-
-  return youthExperienceClassIds;
-};
-
-
-
-
-
-
-
-
+    const youthExperienceClassIds = []; // Array to store created or retrieved YouthExperienceClass IDs
+  
+    try {
+        // Get the current year as a date in YYYY format for AcademicYear
+        const currentYearDate = `${new Date().getFullYear()}`;
+        let classIndex = 0; // Start the classIndex at 0
+  
+        // Loop over each experience and its quantity
+        for (let i = 0; i < data.ExperiencesID.length; i++) {
+            const questions = i === 0 ? data.Questions1 : i === 1 ? data.Questions2 : data.Questions3;
+  
+            // Check if questions and Quantity are defined
+            if (!questions || !Array.isArray(questions) || data.Quantity[i] === undefined) {
+                console.log(`Questions or quantity for experience at index ${i} is missing or undefined. Skipping.`);
+                continue;
+            }
+  
+            const gradesArray = questions[2] ? questions[2].split(',') : [];
+            const studentNum = questions[4] ? questions[4].split(',') : [];
+            const quantity = data.Quantity[i] || 0;
+  
+            for (let j = 0; j < quantity; j++) {
+                console.log('classIndex: ' + classIndex);
+                if (classIndex >= classIds.length) {
+                    console.error(`classIds is out of bounds for experience index ${i}. Skipping.`);
+                    continue;
+                }
+  
+                // Check if a YouthExperienceClass record already exists for this ClassID
+                const selectQuery = `
+                    SELECT ID FROM saltcorn.YouthExperienceClasses
+                    WHERE ClassID = $1
+                `;
+  
+                const selectResult = await client.query(selectQuery, [classIds[classIndex]]);
+  
+                // If the record exists, update it
+                if (selectResult.rows.length > 0) {
+                    const youthClassId = selectResult.rows[0].id;
+                    const updateQuery = `
+                        UPDATE saltcorn.YouthExperienceClasses
+                        SET 
+                            SchoolID = $1,
+                            NumberofStudents = $2,
+                            Grades = $3
+                        WHERE ID = $4
+                        RETURNING ID
+                    `;
+  
+                    const updateResult = await client.query(updateQuery, [
+                        schoolId,
+                        studentNum[j],
+                        gradesArray[j],
+                        youthClassId
+                    ]);
+  
+                    if (updateResult.rows.length > 0) {
+                        console.log(`YouthExperienceClass updated with ID: ${youthClassId}`);
+                        youthExperienceClassIds.push(youthClassId);
+                    } else {
+                        console.error(`Failed to update YouthExperienceClass with ID: ${youthClassId}`);
+                    }
+                } 
+                // If no record exists, insert a new one
+                else {
+                    const insertYouthClassQuery = `
+                        INSERT INTO saltcorn.YouthExperienceClasses (
+                            ClassID, SchoolID, NumberofStudents, Grades, AcademicYear, EnvironmentalAction, OtherDetails, isActive
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                        RETURNING ID
+                    `;
+  
+                    const insertResult = await client.query(insertYouthClassQuery, [
+                        classIds[classIndex],
+                        schoolId,
+                        studentNum[j],
+                        gradesArray[j],
+                        currentYearDate,
+                        false,
+                        `Schedule list:${questions[5]} Teacher list: ${questions[3]}` || null,
+                        true
+                    ]);
+  
+                    if (insertResult.rows.length > 0) {
+                        const youthExperienceClassId = insertResult.rows[0].id;
+                        youthExperienceClassIds.push(youthExperienceClassId);
+                        console.log(`New YouthExperienceClass created with ID: ${youthExperienceClassId}`);
+                    } else {
+                        console.error('Failed to insert new YouthExperienceClass: No ID returned.');
+                    }
+                }
+                classIndex++; // Increment the classIndex
+            }
+        }
+        return youthExperienceClassIds; // Return the array of created or updated class IDs
+    } catch (error) {
+        console.error("Error processing YouthExperienceClass creation/update:", error);
+        return null;
+    }
+  };
+  
 
 const ProfessionalLearningClasses = async (client, data, classIds, organizationId) => {
-  const professionalLearningClassIds = []; // Array to store created or retrieved ProfessionalLearningClass IDs
-
-  try {
-      if (data.eventName === 'order.create') {
-          // Loop over each experience and its quantity
-          for (let i = 0; i < data.ExperiencesID.length; i++) {
-              // Ensure that classId exists for the current index
-              if (!classIds[i]) {
-                  console.error(`No valid ClassID found for index ${i}. Skipping.`);
-                  continue;
-              }
-
-              // Ensure that quantity is defined and is a valid number
-              const quantity = data.Quantity[i] || 0;
-              if (quantity <= 0) {
-                  console.error(`Invalid or missing quantity for experience at index ${i}. Skipping.`);
-                  continue;
-              }
-
-              // Prepare the insert query for saltcorn.ProfessionalLearningClasses table
-              const insertProfessionalLearningClassQuery = `
-                  INSERT INTO saltcorn.ProfessionalLearningClasses (
-                      ClassID, OrganizationID, NumberofParticipants
-                  )
-                  VALUES ($1, $2, $3)
-                  RETURNING ID
-              `;
-
-              // Execute the insert query once per experience
-              const insertResult = await client.query(insertProfessionalLearningClassQuery, [
-                  classIds[i],                          // ClassID from classes array
-                  organizationId,                       // OrganizationID
-                  quantity                               // NumberofParticipants
-              ]);
-
-              // If insert was successful, store the ProfessionalLearningClass ID
-              if (insertResult.rows.length > 0) {
-                  const professionalLearningClassId = insertResult.rows[0].id;
-                  professionalLearningClassIds.push(professionalLearningClassId);
-                  console.log(`New ProfessionalLearningClass created with ID: ${professionalLearningClassId}`);
-              } else {
-                  console.error('Failed to insert new ProfessionalLearningClass: No ID returned.');
-              }
-          }
-          return professionalLearningClassIds; // Return array of new IDs after all inserts
-      } else if (data.eventName === 'order.update') {
-          // For each classId, check for existing ProfessionalLearningClass records and update them
-          for (let i = 0; i < classIds.length; i++) {
-              const questions = i === 0 ? data.Questions1 : i === 1 ? data.Questions2 : data.Questions3;
-              const selectQuery = `
-                  SELECT ID FROM saltcorn.ProfessionalLearningClasses
-                  WHERE ClassID = $1
-              `;
-
-              const selectResult = await client.query(selectQuery, [classIds[i]]);
-              const existingProfessionalClassIds = selectResult.rows.map(row => row.id); // Extract existing IDs
-
-              // If records exist, update them
-              if (existingProfessionalClassIds.length > 0) {
-                  for (const professionalClassId of existingProfessionalClassIds) {
-                      const updateQuery = `
-                          UPDATE saltcorn.ProfessionalLearningClasses
-                          SET 
-                              OrganizationID = $1,
-                              MeetingTime = $2,
-                              SpecialNeeds = $3,
-                              OtherDetails = $4
-                          WHERE ID = $5
-                          RETURNING ID
-                      `;
-
-                      const updateResult = await client.query(updateQuery, [
-                          organizationId,                             // OrganizationID
-                          questions[1] || null,                       // MeetingTime
-                          questions[3] || null,                       // SpecialNeeds
-                          questions[2] || null,                       // OtherDetails
-                          professionalClassId                         // Target record ID for update
-                      ]);
-
-                      if (updateResult.rows.length > 0) {
-                          console.log(`ProfessionalLearningClass updated with ID: ${professionalClassId}`);
-                          professionalLearningClassIds.push(professionalClassId); // Store updated ID
-                      } else {
-                          console.error(`Failed to update ProfessionalLearningClass with ID: ${professionalClassId}`);
-                      }
-                  }
-              } else {
-                  console.log(`No existing ProfessionalLearningClass records found for ClassID: ${classIds[i]}. Skipping update.`);
-              }
-          }
-          return professionalLearningClassIds; // Return array of IDs after updates
-
-      } else {
-          console.log("Event is neither 'order.create' nor 'order.update'; skipping operation.");
-          return null;
-      }
-  } catch (error) {
-      console.error("Error processing ProfessionalLearningClass creation/update:", error);
-  }
-
-  return professionalLearningClassIds; // Return the array of IDs (created or updated)
-};
-
-
+    const professionalLearningClassIds = []; // Array to store created or updated ProfessionalLearningClass IDs
+  
+    try {
+        // Handle 'order.update' event
+        // For each classId, check for existing ProfessionalLearningClass records and update them
+        for (let i = 0; i < classIds.length; i++) {
+            const questions = i === 0 ? data.Questions1 : i === 1 ? data.Questions2 : data.Questions3;
+            const selectQuery = `
+                SELECT ID FROM saltcorn.ProfessionalLearningClasses
+                WHERE ClassID = $1
+            `;
+  
+            const selectResult = await client.query(selectQuery, [classIds[i]]);
+            const existingProfessionalClassIds = selectResult.rows.map(row => row.id); // Extract existing IDs
+  
+            // If records exist, update them
+            if (existingProfessionalClassIds.length > 0) {
+                for (const professionalClassId of existingProfessionalClassIds) {
+                    const updateQuery = `
+                        UPDATE saltcorn.ProfessionalLearningClasses
+                        SET 
+                            OrganizationID = $1,
+                        WHERE ID = $2
+                        RETURNING ID
+                    `;
+  
+                    const updateResult = await client.query(updateQuery, [
+                        organizationId,                             // OrganizationID
+                        professionalClassId                         // Target record ID for update
+                    ]);
+                    if (updateResult.rows.length > 0) {
+                        console.log(`ProfessionalLearningClass updated with ID: ${professionalClassId}`);
+                        professionalLearningClassIds.push(professionalClassId); // Store updated ID
+                    } else {
+                        console.error(`Failed to update ProfessionalLearningClass with ID: ${professionalClassId}`);
+                    }
+                }
+            } else {
+                console.log(`No existing ProfessionalLearningClass records found for ClassID: ${classIds[i]}. Creating new record.`);
+  
+                // If no record exists, create a new ProfessionalLearningClass entry
+                const quantity = data.Quantity[i] || 0;
+                if (quantity > 0) {
+                    // Prepare the insert query for saltcorn.ProfessionalLearningClasses table
+                    const insertProfessionalLearningClassQuery = `
+                        INSERT INTO saltcorn.ProfessionalLearningClasses (
+                            ClassID, OrganizationID, NumberofParticipants, MeetingTime, MeetingLocation, SpecialNeeds, OtherDetails
+                        )
+                        VALUES ($1, $2, $3, $4, $5, $6, $7)
+                        RETURNING ID
+                    `;
+  
+                    const insertResult = await client.query(insertProfessionalLearningClassQuery, [
+                        classIds[i],                          // ClassID from classes array
+                        organizationId,                       // OrganizationID
+                        quantity,                               // NumberofParticipants
+                        questions[1],
+                        questions[4] || null,
+                        questions[3],
+                        questions[2]
+                    ]);
+  
+                    // If insert was successful, store the ProfessionalLearningClass ID
+                    if (insertResult.rows.length > 0) {
+                        const professionalLearningClassId = insertResult.rows[0].id;
+                        professionalLearningClassIds.push(professionalLearningClassId);
+                        console.log(`New ProfessionalLearningClass created with ID: ${professionalLearningClassId}`);
+                    } else {
+                        console.error('Failed to insert new ProfessionalLearningClass: No ID returned.');
+                    }
+                } else {
+                    console.error(`Invalid or missing quantity for experience at index ${i}. Skipping creation.`);
+                }
+            }
+        }
+        return professionalLearningClassIds; // Return array of new or updated ProfessionalLearningClass IDs
+    } catch (error) {
+        console.error("Error processing ProfessionalLearningClass creation/update:", error);
+        return null;
+    }
+  };
+  
 
 const ProfClasses = async (client, data, bookingId, programIds, themeIds, locationIds) => {
-  const classIds = []; // Array to store created or updated class IDs
-
-  try {
-      // If the event is 'order.create'
-      if (data.eventName === 'order.create') {
-          // Loop over each experience
-          for (let i = 0; i < data.ExperiencesID.length; i++) {
-              // Prepare the insert query for saltcorn.Classes table
-              const insertClassQuery = `
-                  INSERT INTO saltcorn.Classes (
-                      BookingID, ProgramID, ThemeID, LocationID, Date, StartTime, EndTime, isYouthExperience, isProfessionalLearning, Notes
-                  )
-                  VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                  RETURNING ID
-              `;
-
-              // Use the correct index for programIds, themeIds, and locationIds arrays
-              const insertResult = await client.query(insertClassQuery, [
-                  bookingId,                 // BookingID 
-                  programIds[i],             // ProgramID
-                  themeIds[i],               // ThemeID 
-                  locationIds[i],            // LocationID 
-                  data.arrivalDate[i],       // Date
-                  null,                      // StartTime
-                  null,                      // EndTime
-                  null,                      // isYouthExperience
-                  true,                      // isProfessionalLearning (since this is for professional classes)
-                  data.notes[i]             // Notes (by index)
-              ]);
-
-              // Add the created class ID to the array if it was successfully inserted
-              if (insertResult.rows.length > 0) {
-                  const classId = insertResult.rows[0].id;
-                  classIds.push(classId);
-                  console.log(`New professional class created with ID: ${classId}`);
-              } else {
-                  console.error('Failed to insert new professional class: No ID returned.');
-              }
-          }
-      } 
-
-      // If the event is 'order.update'
-      else if (data.eventName === 'order.update') {
-          // Lookup all classes with the same BookingID
-          const selectClassesQuery = `
-              SELECT ID FROM saltcorn.Classes
-              WHERE BookingID = $1
-          `;
-
-          const selectResult = await client.query(selectClassesQuery, [bookingId]);
-
-          if (selectResult.rows.length > 0) {
-              // If classes are found, gather all the class IDs for the given BookingID
-              for (const row of selectResult.rows) {
-                  classIds.push(row.id);
-              }
-
-              console.log(`Found ${selectResult.rows.length} professional class(es) with BookingID: ${bookingId}`);
-          } else {
-              console.log(`No professional classes found with BookingID: ${bookingId}`);
-          }
-      } else {
-          console.log("Event is neither 'order.create' nor 'order.update'; skipping operation.");
-      }
-
-      return classIds; // Return the array of created or updated class IDs
-  } catch (error) {
-      console.error("Error processing professional class creation or update:", error);
-      return null;
-  }
-};
-
+    const classIds = []; // Array to store created or updated class IDs
+    try {
+        // Always handle 'order.update' events
+        // Lookup all classes with the same BookingID
+        const selectClassesQuery = `
+            SELECT ID FROM saltcorn.Classes
+            WHERE BookingID = $1
+        `;
+        const selectResult = await client.query(selectClassesQuery, [bookingId]);
+  
+        if (selectResult.rows.length > 0) {
+            // If classes are found, gather all the class IDs for the given BookingID
+            for (const row of selectResult.rows) {
+                classIds.push(row.id);
+            }
+  
+            console.log(`Found ${selectResult.rows.length} professional class(es) with BookingID: ${bookingId}`);
+        } else {
+            // If no classes exist, insert new records
+            console.log(`No professional classes found with BookingID: ${bookingId}. Creating new records.`);
+  
+            // Loop over each experience and insert new professional classes
+            for (let i = 0; i < data.ExperiencesID.length; i++) {
+                // Prepare the insert query for saltcorn.Classes table
+                const insertClassQuery = `
+                    INSERT INTO saltcorn.Classes (
+                        BookingID, ProgramID, ThemeID, LocationID, Date, isYouthExperience, isProfessionalLearning, Notes, isActive
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                    RETURNING ID
+                `;
+  
+                // Use the correct index for programIds, themeIds, and locationIds arrays
+                const insertResult = await client.query(insertClassQuery, [
+                    bookingId,                 // BookingID 
+                    programIds[i],             // ProgramID
+                    themeIds[i],               // ThemeID 
+                    locationIds[i],            // LocationID 
+                    data.arrivalDate[i],       // Date
+                    false,                      // isYouthExperience
+                    true,                      // isProfessionalLearning (since this is for professional classes)
+                    data.notes[i],             // Notes (by index)
+                    true
+                ]);
+  
+                // Add the created class ID to the array if it was successfully inserted
+                if (insertResult.rows.length > 0) {
+                    const classId = insertResult.rows[0].id;
+                    classIds.push(classId);
+                    console.log(`New professional class created with ID: ${classId}`);
+                } else {
+                    console.error('Failed to insert new professional class: No ID returned.');
+                }
+            }
+        }
+        
+        return classIds; // Return the array of created or updated class IDs
+    } catch (error) {
+        console.error("Error processing professional class creation or update:", error);
+        return null;
+    }
+  };
+  
 
 
 // Handle GET request to the root URL
