@@ -21,6 +21,7 @@ This application is designed to process incoming webhook data from Xola, a platf
 
 - Node.js (v14 or higher)
 - PostgreSQL
+- npm (Node Package Manager)
 
 ### Step 1: Clone the Repository
 
@@ -65,3 +66,37 @@ Run the following command to start the application:
 npm start
 ```
 The application will listen for incoming webhooks on port specified in PORT of .env file
+
+##How It Works
+
+    1. Webhook Endpoint:
+        Listens on /webhook.
+        Parses incoming payload and identifies the type of experience (professional or youth).
+
+    2. Professional Learning:
+        Collects relevant details like themes, locations, and programs.
+        Inserts data into corresponding database tables.
+        Calls various helper functions (Invoice, getThemes, etc.) for processing.
+
+   3. Youth Experience:
+        Similar to professional learning but uses different workflows to handle school-related data.
+
+   4. Duplicate Prevention:
+        Tracks processed event IDs in-memory to avoid reprocessing.
+
+   5.  Database Transaction:
+        Ensures atomicity for each webhook event using BEGIN and COMMIT.
+
+##Database Interaction
+
+This application interacts with multiple database tables:
+
+    Invoices: Stores invoice details.
+    Themes: Associates the booking with specific themes.
+    Locations: Tracks booking locations.
+    Programs: Maps programs to bookings.
+    Contacts: Saves customer contact details.
+    ProfessionalLearningClasses: Stores data for professional learning classes.
+    YouthExperienceClasses: Stores data for youth experience bookings.
+
+    Note: Ensure the database schema matches the expected structure.
