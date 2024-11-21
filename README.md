@@ -103,4 +103,48 @@ This application interacts with multiple database tables:
 - **YouthExperienceClasses**: Stores data for youth experience bookings.
 
 > **Note**: Ensure the database schema matches the expected structure.
+---
 
+## Example Payload
+Here is an example JSON payload that the application processes:
+
+---
+
+## Error Handling
+
+The application implements robust error handling to ensure stability:
+
+1. **Invalid Payloads:**
+       - Logs the issue and responds with a 400 Bad Request.
+2. **Database Errors:**
+      -  Rolls back incomplete transactions and responds with a 500 Internal Server Error.
+3. **Duplicate Events:**
+       - Prevents reprocessing by tracking event IDs in memory.
+
+---
+## API Responses
+The webhook endpoint provides clear responses to indicate the processing status:
+
+   - 200 OK: The webhook is successfully processed or skipped (duplicate detection).
+   - 400 Bad Request: The incoming payload is invalid or malformed.
+   - 500 Internal Server Error: An unexpected error occurred during processing.
+
+---
+## Customization Options
+
+You can customize the following aspects of the application:
+    - Specified Values:
+        Modify the specifiedValues array to detect professional learning events based on your      specific requirements.
+    - Logging and Debugging:
+        Adjust console.log statements or implement a logging library for more advanced tracking.
+---
+
+##Testing
+You can test the webhook endpoint using a tool like Postman or cURL:
+Using Postman:
+
+   - Set the URL to http://localhost:8000/webhook.
+   - Select the POST method.
+   - Add a JSON payload in the request body.
+   - Set the Content-Type header to application/json.
+   - Send the request and verify the response.
