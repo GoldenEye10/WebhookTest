@@ -131,20 +131,23 @@ The webhook endpoint provides clear responses to indicate the processing status:
 
 ---
 ## Customization Options
-
 You can customize the following aspects of the application:
-    - Specified Values:
-        Modify the specifiedValues array to detect professional learning events based on your      specific requirements.
-    - Logging and Debugging:
-        Adjust console.log statements or implement a logging library for more advanced tracking.
+
+- Specified Values:
+
+    Modify the specifiedValues array to detect professional learning events based on your specific requirements.
+
+- Logging and Debugging:
+
+    Adjust console.log statements or implement a logging library for more advanced tracking.
 ---
 
-##Testing
+## Testing
 You can test the webhook endpoint using a tool like Postman or cURL:
 Using Postman:
 
-   - Set the URL to http://localhost:8000/webhook.
-   - Select the POST method.
-   - Add a JSON payload in the request body.
-   - Set the Content-Type header to application/json.
-   - Send the request and verify the response.
+- Set the URL to http://localhost:8000/webhook.
+- Select the POST method.
+- Add a JSON payload in the request body.
+- Set the Content-Type header to application/json.
+- Send the request and verify the response.
