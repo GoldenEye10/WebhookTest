@@ -30,21 +30,25 @@ Clone the repository to your local machine using the following command:
 git clone https://github.com/GoldenEye10/WebhookTest.git
 ```
 
-Step 2: Navigate to the Project Folder
+###Step 2: Navigate to the Project Folder
 
 Once you’ve cloned the repository, change to the project directory:
 cd WebhookTest
 
-Step 3: Install Dependencies
+###Step 3: Install Dependencies
 
 Run the following command to install the required dependencies:
+```bash
 npm install express
 npm install body-parser
 npm intall pg
+```
 
-Step 4: Set Up PostgreSQL Database Connection
+###Step 4: Set Up PostgreSQL Database Connection
 
 Create a .env file in the root of the project and define your PostgreSQL database connection parameters:
+
+```bash
 DB_USER=your-database-user
 DB_HOST=your-database-host
 DB_DATABASE=your-database-name
@@ -52,10 +56,12 @@ DB_PASSWORD=your-database-password
 DB_PORT=5432
 
 PORT= ....(8000 or any port you want it to run)
+```
 
-Step 5: Start the Application
+###Step 5: Start the Application
 
 Run the following command to start the application:
+```bash
 npm start
-
+```
 The application will listen for incoming webhooks on port specified in PORT of .env file
