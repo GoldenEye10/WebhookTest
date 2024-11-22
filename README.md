@@ -8,6 +8,7 @@ This application is designed to process incoming webhook data from Xola, a platf
 - Integrates with a PostgreSQL database to store processed data for further use.
 - Provides logic for handling different events and order statuses(Integer such as `order.update`, `order.create` and status of order.
 
+---
 ## Technologies Used
 
 - **Node.js** and **Express.js** for the server
@@ -15,43 +16,138 @@ This application is designed to process incoming webhook data from Xola, a platf
 - **Body-Parser** for parsing incoming webhook payloads
 - **Xola Webhook Integration** to receive booking and event updates
 
+---
 ## Installation
 
 ### Prerequisites
 
 - Node.js (v14 or higher)
 - PostgreSQL
+- npm (Node Package Manager)
 
-### Step 1: Clone the Repository
+#### Step 1: Clone the Repository
 
 Clone the repository to your local machine using the following command:
 
 ```bash
 git clone https://github.com/GoldenEye10/WebhookTest.git
+```
 
-
-Step 2: Navigate to the Project Folder
+#### Step 2: Navigate to the Project Folder
 
 Once you’ve cloned the repository, change to the project directory:
 cd WebhookTest
 
-Step 3: Install Dependencies
+#### Step 3: Install Dependencies
 
 Run the following command to install the required dependencies:
-npm install
+```bash
+npm install express
+npm install body-parser
+npm intall pg
+```
 
-Step 4: Set Up PostgreSQL Database Connection
+#### Step 4: Set Up PostgreSQL Database Connection
 
 Create a .env file in the root of the project and define your PostgreSQL database connection parameters:
+
+```bash
 DB_USER=your-database-user
 DB_HOST=your-database-host
 DB_DATABASE=your-database-name
 DB_PASSWORD=your-database-password
 DB_PORT=5432
 
-Step 5: Start the Application
+PORT= ....(8000 or any port you want it to run)
+```
+
+#### Step 5: Start the Application
 
 Run the following command to start the application:
+```bash
 npm start
+```
+The application will listen for incoming webhooks on port specified in PORT of .env file
 
-The application will listen for incoming webhooks on port 3004 or the port specified in your environment variables.
+---
+## How It Works
+1. **Webhook Endpoint**:
+    - Listens on `/webhook`.
+    - Parses incoming payload and identifies the type of experience (professional or youth).
+
+2. **Professional Learning**:
+    - Collects relevant details like themes, locations, and programs.
+    - Inserts data into corresponding database tables.
+    - Calls various helper functions (e.g., `Invoice`, `getThemes`, etc.) for processing.
+
+3. **Youth Experience**:
+    - Similar to professional learning but uses different workflows to handle school-related data.
+
+4. **Duplicate Prevention**:
+    - Tracks processed event IDs in memory to avoid reprocessing.
+
+5. **Database Transaction**:
+    - Ensures atomicity for each webhook event using `BEGIN` and `COMMIT`.
+
+---
+
+## Database Interaction
+This application interacts with multiple database tables:
+
+- **Invoices**: Stores invoice details.
+- **Themes**: Associates the booking with specific themes.
+- **Locations**: Tracks booking locations.
+- **Programs**: Maps programs to bookings.
+- **Contacts**: Saves customer contact details.
+- **ProfessionalLearningClasses**: Stores data for professional learning classes.
+- **YouthExperienceClasses**: Stores data for youth experience bookings.
+
+> **Note**: Ensure the database schema matches the expected structure.
+---
+
+## Example Payload
+Here is an example JSON payload that the application processes:
+
+---
+
+## Error Handling
+
+The application implements robust error handling to ensure stability:
+
+1. **Invalid Payloads:**
+       - Logs the issue and responds with a 400 Bad Request.
+2. **Database Errors:**
+      -  Rolls back incomplete transactions and responds with a 500 Internal Server Error.
+3. **Duplicate Events:**
+       - Prevents reprocessing by tracking event IDs in memory.
+
+---
+## API Responses
+The webhook endpoint provides clear responses to indicate the processing status:
+
+   - 200 OK: The webhook is successfully processed or skipped (duplicate detection).
+   - 400 Bad Request: The incoming payload is invalid or malformed.
+   - 500 Internal Server Error: An unexpected error occurred during processing.
+
+---
+## Customization Options
+You can customize the following aspects of the application:
+
+- Specified Values:
+
+    Modify the specifiedValues array to detect professional learning events based on your specific requirements.
+
+- Logging and Debugging:
+
+    Adjust console.log statements or implement a logging library for more advanced tracking.
+---
+
+## Testing
+You can test the webhook endpoint using a tool like Postman or cURL:
+Using Postman:
+
+- Set the URL to http://localhost:8000/webhook.
+- Select the POST method.
+- Add a JSON payload in the request body.
+- Set the Content-Type header to application/json.
+- Send the request and verify the response.
