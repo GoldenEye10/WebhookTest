@@ -1,12 +1,10 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const app = express();
-const PORT = process.env.PORT || 8084;
+const PORT = process.env.PORT || 3004;
 const { Pool } = require('pg');
-
 app.use(bodyParser.json());
 app.use(bodyParser.urlencoded({ extended: true }));
-
 
 const pool = new Pool({
     user: 'cpawssadb',
@@ -19,19 +17,28 @@ const pool = new Pool({
     }
 });
 
+// Store processed event IDs in-memory (temporary storage)
+let processedEventIds = new Set();
+// Object to store webhook data
 let latestWebhookData = {};
+
+//object to store questions for booking
 let allQuestions = [];
+
+//same as latestwebhookData. using it to display webhook on web
 let webhookJSON = {};
-let individualWebhook = {};
 // Handle Xola webhook
 app.post('/webhook', async(req, res) => {
     console.log('Webhook received:');
-   console.log(req.body); // Log the entire webhook payload
+   // res.status(200).send('OK');
+    //Print out webhook json
+   //console.log(req.body); // Log the entire webhook payload
    //console.log(JSON.stringify(req.body, null, 2));
-   webhookJSON = req.body;
+
+   //webhookJSON = req.body;
+
     // Collect all experiences (names) from the array of items
     const notes = req.body.data.notes.map(note => note?.text ?? null);
-
      allQuestions = [];
      individualWebhook = [];
 // Initialize arrays to store multiple values
@@ -39,7 +46,6 @@ app.post('/webhook', async(req, res) => {
     const experiencesID = [];
     const bookedDate = [];
     const quantity = [];
-    const demographic = [];
     const notesArray = [];
     const addons1Array = [];
     const addons2Array = [];
@@ -50,7 +56,6 @@ app.post('/webhook', async(req, res) => {
         experiencesID.push(item?.id ?? null); // collect id for each experience
         bookedDate.push(item?.arrival?? null); // Collect arrivalDatetime for each item
         quantity.push(item?.quantity?? null); // select the quantity
-        demographic.push(item?.demographics?.[0]. quantity?? null); 
         amountArray.push(item?. amount ?? null);
         addons1Array.push(item?.addOns?.[0]?.configuration?.name ?? null); // Collect Addons1 name
         addons2Array.push(item?.addOns?.[1]?.configuration?.name ?? null); // Collect Addons2 name
@@ -75,11 +80,10 @@ app.post('/webhook', async(req, res) => {
     });
 
 
-// Access Questions1 and Questions2
+// Access Questions1 and Questions2 and Question3
     const Questions1 = allQuestions[0]?.Questions ?? null;
     const Questions2 = allQuestions.length > 1 ? allQuestions[1]?.Questions ?? 0 : 0;
     const Questions3 = allQuestions.length > 2 ? allQuestions[2]?.Questions ?? 0 : 0;
-
 
     req.body.data.notes.forEach(note => {
         notesArray.push(note?.text ?? null);
@@ -99,7 +103,6 @@ app.post('/webhook', async(req, res) => {
         amountArr: amountArray,
         ExperiencesID: experiencesID,
         Experiences: experiences,
-        Demographics: demographic, // Array of all experiences
         Quantity: quantity,
         arrivalDate: bookedDate, // Array of all createdAt times
         notes: notesArray, // Array of all notes
@@ -110,74 +113,97 @@ app.post('/webhook', async(req, res) => {
         Questions3: Questions3, // array of questions
     };
 
-    //console.log('Stored webhook data:', latestWebhookData);
+    if (processedEventIds.has(latestWebhookData.id)) {
+        console.log('Webhook already processed:', latestWebhookData.id);
+        // Print out all the processed event IDs
+    console.log('All processed event IDs:', Array.from(processedEventIds));
+        return res.status(200).send('OK');// Acknowledge receipt but don't process
+    }
+
+    // Mark this event as processed
+    processedEventIds.add(latestWebhookData.id);
+    // Print out all the processed event IDs
+    console.log('after 1st add processed event IDs:', Array.from(processedEventIds));
+
+    //Debug statement
+    // prints out stored data
     console.log('Stored webhook data:', JSON.stringify(latestWebhookData, null, 2));
 
+    //Array with all the name of professional learning 
     const specifiedValues = [
         "professional learning workshop (1-2 hours)",
         "professional learning outdoors - half day",
         "professional learning outdoors - half day x 2 (am + pm)",
         "professional learning outdoors - full day"
       ];
-     //start calling function to insert data
     
     // Start checking for specified values in experiences
     const hasSpecifiedValues = latestWebhookData.Experiences.some(experience =>
         specifiedValues.includes(experience.toLowerCase())
     );
     
+    // If professioinal learning is detected execute if part below
+    // IF not do else part
     if (hasSpecifiedValues) {
+        // Connection request for database
         const client = await pool.connect();
-    
         try {
             await client.query('BEGIN');
 
-            if(latestWebhookData.eventName === 'order.update' && (latestWebhookData.orderStatus != 700)){
+            if(latestWebhookData.orderStatus < 200){
+                console.log('status is < 200');
+                processedEventIds.clear();
+                return res.status(200).send('OK');
+            }
 
-            let schoolId = null; 
+            //Check if the webhook received is update and status value !=700 (update to Canceled booking)
+            if (
+                (latestWebhookData.eventName === 'order.update' || latestWebhookData.eventName === 'order.cancel') &&
+                ((latestWebhookData.orderStatus >= 200 && latestWebhookData.orderStatus <= 300) || latestWebhookData.orderStatus === 700)
+            ) {
+            let schoolId = null;
+            
+            //Logic to get total number of classes 
             const totalClasses = latestWebhookData.Quantity.length;
             console.log('Number of classes in professional learning: ' + totalClasses )
             
+            // call Invoice function and store invoiceId
             const invoiceId = await Invoice(client, latestWebhookData);
             console.log(' Professional invoice ID:', invoiceId); 
             
             
-            // Insert into the classes table using the schoolID, sessionID
+            // call getOrganizationId function and store organizationId
             const organizationId = await getOrganizationId(client, latestWebhookData);
             console.log('Organization ID:', organizationId);
 
-            
-                        // check themes
+            // Call getThemes function and store themeId
             const themeId = await getThemes(client, latestWebhookData);
             console.log('Theme ID:', themeId);
             
-                        // check location
+            // call getLocation function and store locationId
             const locationId = await getLocations(client, latestWebhookData);
             console.log('Location ID:', locationId);
             
-                        // check location
+             // call getPrograms function and store programId
             const programId = await getPrograms(client, latestWebhookData);
             console.log('Program ID:', programId);
 
-            // Insert into the contacts table using the organizationId
+            // call Contacts function and store contactId, by passing schoolId and organizationId returned by above function
             const contactId = await Contacts(client, latestWebhookData, schoolId, organizationId);
             console.log('Contact ID:', contactId);
 
 
-            // Insert into the bookings table
+            // call Booking function and store bookingId, by passing invoiceId, contactId, total classes from above funtion
             const bookingId = await Booking(client, latestWebhookData, invoiceId, contactId, totalClasses);
             console.log('Booking ID:', bookingId);
 
-
+             //call ProfClasses and store classId, by passing bookingId, themeId, locationId retruned from above functions   
             const classId = await ProfClasses(client, latestWebhookData, bookingId, programId, themeId, locationId);
             console.log('Class ID:', classId);
 
-
+            // Call ProfessionalLearningClasses and store professionalClassId, by paassing classId, organizationId from above function
             const professionalClassId = await ProfessionalLearningClasses(client, latestWebhookData, classId, organizationId);
             console.log('professional ID:', professionalClassId);
-
-
-     
         }
             // Commit the transaction if everything went well
             await client.query('COMMIT');
@@ -187,66 +213,83 @@ app.post('/webhook', async(req, res) => {
         } finally {
             client.release(); // Release the client back to the pool
         }
-    } else {
-
+        processedEventIds.clear();
+        return res.status(200).send('OK');
+    } 
+    
+    //IF no professional learning experience is detected, its youth experience so execute following functions
+    else {
         console.log('youth experience detected')
+
+        // Establish connection to database
         const client = await pool.connect();
 
         try {
+            // start the database connection
             await client.query('BEGIN');
 
-            if(latestWebhookData.orderStatus <= 200){
-                console.log('No insertion or update because of status code 700')
+            // IF orderStatus < 200, it means the order has not been accepted from Xola admin console
+            if(Number(latestWebhookData.orderStatus) < 200) {
+                console.log('No insertion or update because of status code < 200');
+                processedEventIds.clear();
+                return res.status(200).send('OK');
             }
+            
 
+            // IF orderStatus === 700 , it means the status of order is canceled
             if(latestWebhookData.orderStatus === 700){
                 console.log('cancel order status detected')
             }
 
-            if(latestWebhookData.eventName === 'order.update' && latestWebhookData.orderStatus !== 700 && latestWebhookData.orderStatus >= 200 && latestWebhookData.orderStatus <= 300){
+            // IF status of order is not canceled and been accepted execute followin query
+            if (
+                (latestWebhookData.eventName === 'order.update' || latestWebhookData.eventName === 'order.cancel') &&
+                ((latestWebhookData.orderStatus >= 200 && latestWebhookData.orderStatus <= 300) || latestWebhookData.orderStatus === 700)
+            ) {
 
+                // Code to execute 
+                // Initialize organizationId as null (This is Youth Experience Programs)
             let organizationId = null;
 
+            //Logic to get total number of classes
             const totalClasses = Array.isArray(latestWebhookData.Quantity) ? latestWebhookData.Quantity.reduce((acc, val) => acc + val, 0) : 0;
-
             console.log('Number of classes in youth learning: ' + totalClasses )
                 
-            //saltcorn schema
-            // Insert into the classes table using the schoolID, sessionID
+            // Call Invoice Function and store invoiceId
             const invoiceId = await Invoice(client, latestWebhookData);
             console.log('invoice ID:', invoiceId); 
 
-            // Insert into the classes table using the schoolID, sessionID
+            // Call getSchoolId function and store schoolId
             const schoolId = await getSchoolId(client, latestWebhookData);
             console.log('School ID:', schoolId);
 
-            // check themes
+            // Call getTehemes function and store themeId
             const themeId = await getThemes(client, latestWebhookData);
             console.log('Theme ID:', themeId);
 
-            // check location
+            // Call getLocations function and store locationiId
             const locationId = await getLocations(client, latestWebhookData);
             console.log('Location ID:', locationId);
 
-            // check location
+            // Call getPrograms function and store programId
             const programId = await getPrograms(client, latestWebhookData);
             console.log('Program ID:', programId);
 
-            // Insert into the classes table using the schoolID, sessionID
+            // Call Contacts function and store contactId by passing schoolId returned from above function
             const contactId = await Contacts(client, latestWebhookData, schoolId, organizationId);
             console.log('Contact ID:', contactId);
 
-            // Insert into the bookings table
+            // Call Booking function and store bookingid and store bookingId by passing invoiceId, contactId and totalClasses
             const bookingId = await Booking(client, latestWebhookData, invoiceId, contactId, totalClasses);
             console.log('Booking ID:', bookingId);
 
-            // create class
+            // Call classes function and store classId
             const classId = await Classes(client, latestWebhookData, bookingId, programId, themeId, locationId);
             console.log('Class ID:', classId);
 
+            //Call YouthExperienceClasses and store youthClassId
             const youthClassId = await YouthExperienceClasses(client, latestWebhookData, classId, schoolId);
-            console.log('Youth Class ID:', youthClassId);
-            
+            console.log('Youth Class ID:', youthClassId);         
             }
             await client.query('COMMIT');
         } catch (error) {
@@ -255,260 +298,34 @@ app.post('/webhook', async(req, res) => {
         } finally {
             client.release(); // Release the client back to the pool
         }
+
+        //Clear the temporarily saved ids
+        processedEventIds.clear();
+        // send received confimation to xola
+        return res.status(200).send('OK');
     }
     });
 
-    // for postgres single table
-    async function insertData3(latestWebhookData) {
-        // PostgreSQL database configuration
-        const pool = new Pool({
-            user: 'cpawssadb',
-            host: '164.90.150.233',
-            database: 'cpawsdb', 
-            password: 'cpaws@edu24',  
-            port: 5432, 
-            ssl: {
-                rejectUnauthorized: false 
-            }
-        });
-    
-        const client = await pool.connect();    
-   
-        try {
-            const currentDate = new Date().toISOString().split('T')[0];
-            const arrivalDate = latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[0] : null;
-            const fiscalYear = arrivalDate ? new Date(arrivalDate).getFullYear() : null;
-    
-            if (latestWebhookData.eventName === 'order.create') {
-                //first loop through number of items in cart
-                // then loop through quantity
 
-                // Loop through the bookings to insert multiple rows
-                for (let i = 0; i < latestWebhookData.ExperiencesID.length; i++) {
-                    for(let j=0; j< latestWebhookData.Quantity[i]; j++){
-
-                        const actualAmount = latestWebhookData.amountArr[i]/latestWebhookData.Quantity[i];
-                    const insertQuery = `
-                        INSERT INTO prabinsaltcorn.XolaBooking (
-                            EventName, 
-                            XolaBookingID, 
-                            PaymentMethod, 
-                            CustomerFirstName, 
-                            CustomerLastName, 
-                            CustomerEmail, 
-                            Phone, 
-                            Invoice, 
-                            Amount, 
-                            ExperienceID, 
-                            Experience, 
-                            Quantity, 
-                            Grades, 
-                            SchoolName, 
-                            SchoolBoard, 
-                            Address, 
-                            NumStudents, 
-                            ArrivalDate, 
-                            CreatedDate, 
-                            UpdatedDate, 
-                            ArrivalTime, 
-                            Note, 
-                            Theme, 
-                            Location, 
-                            Paid, 
-                            Fiscal, 
-                            InXola, 
-                            Project, 
-                            Funder, 
-                            Subsidy, 
-                            DepositNotes
-                        ) 
-                        VALUES (
-                            $1, $2, $3, $4, $5, $6, $7, $8, $9, 
-                            $10, $11, $12, $13, $14, $15, $16, 
-                            $17, $18, $19, $20, $21, $22, $23, 
-                            $24, $25, $26, $27, $28, $29, $30, 
-                            $31)`;
-    
-                    await client.query(insertQuery, [
-                        latestWebhookData.eventName || null, // EventName
-                        latestWebhookData.id || null, // XolaBookingID
-                        latestWebhookData.paymentMethod || null, // PaymentMethod
-                        latestWebhookData.customerName ? latestWebhookData.customerName.split(" ")[0] : null, // CustomerFirstName
-                        latestWebhookData.customerName ? latestWebhookData.customerName.split(" ")[1] : null, // CustomerLastName
-                        latestWebhookData.customerEmail || null, // CustomerEmail
-                        latestWebhookData.phone || null, // Phone
-                        null, // Invoice#
-                        actualAmount || 0, // Amount
-                        latestWebhookData.ExperiencesID[i] || null, // ExperienceID
-                        latestWebhookData.Experiences[i] || null, // Experience
-                        latestWebhookData.Quantity[i] || null, // Quantity
-                        null, // Grades
-                        null , // SchoolName
-                        null, // SchoolBoard
-                        null, // Address
-                        null, // NumStudents
-                        latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[i] : null, // ArrivalDate
-                        currentDate, // CreatedDate
-                        currentDate, // UpdatedDate
-                        null, // ArrivalTime
-                        latestWebhookData.notes && latestWebhookData.notes.length > 0 ? latestWebhookData.notes.join(", ") : null, // Note
-                        latestWebhookData.addons1 && latestWebhookData.addons1.length > 0 ? latestWebhookData.addons1[i] : null, // Theme
-                        latestWebhookData.addons2 && latestWebhookData.addons2.length > 0 ? latestWebhookData.addons2[i] : null, // Location
-                        false, // Paid (default false)
-                        fiscalYear, // Fiscal
-                        true, // InXola (default true)
-                        "909 Education General", // Project
-                        "Program Funds", // Funder
-                        null, // Subsidy
-                        null // DepositNotes
-                    ]);
-                
-                    console.log(`Data inserted successfully for order.create: ${latestWebhookData.id}, ExperienceID: ${latestWebhookData.ExperiencesID[i]}`);
-                }
-            }
-            } else if (latestWebhookData.eventName === 'order.update') {
-                // Loop through the bookings to update multiple rows
-                const experienceIDs = latestWebhookData.ExperiencesID; // Get all Experience IDs
-                const updateQueries = []; // Store queries to execute later
-
-    // Construct different update queries based on the number of Experience IDs
-    if (experienceIDs.length > 0) {
-        const updateQuery1 = `
-            UPDATE prabinsaltcorn.xolabooking 
-            SET 
-                EventName = $1,
-                PaymentMethod = $2,
-                ExperienceID = $3,
-                Grades = $4,
-                SchoolName = $5,
-                SchoolBoard = $6,
-                NumStudents = $7,
-                ArrivalDate = $8,
-                UpdatedDate = $9,
-                ArrivalTime = $10,
-                Paid = $11
-            WHERE XolaBookingID = $12 AND ExperienceID = $13`;
-
-        // Add first update query
-        updateQueries.push(client.query(updateQuery1, [
-            latestWebhookData.eventName || null,
-            latestWebhookData.paymentMethod || null,
-            experienceIDs[0] || null, // ExperienceID[0]
-            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[2] : null, // Grades
-            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[4] : null, // SchoolName
-            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[0] : null, // SchoolBoard
-            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[3] : null, // NumStudents
-            latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[0] : null, // ArrivalDate
-            currentDate, // UpdatedDate
-            latestWebhookData.Questions1 && latestWebhookData.Questions1.length > 0 ? latestWebhookData.Questions1[1] : null, // ArrivalTime
-            false, // Paid (default false)
-            latestWebhookData.id || null, // XolaBookingID
-            experienceIDs[0] || null, // ExperienceID[0]
-            
-        ]));
-             }
-        // If there's a second ExperienceID, add another update query
-    if (experienceIDs.length > 1 && (latestWebhookData.Questions2.length> 1) ) {
-            console.log("Second if condition met: experienceIDs.length > 1 and latestWebhookData.Questions2.length > 1");
-            const updateQuery2 = `
-                UPDATE prabinsaltcorn.xolabooking 
-                SET 
-                    EventName = $1,
-                    PaymentMethod = $2,
-                    ExperienceID = $3,
-                    Grades = $4,
-                    SchoolName = $5,
-                    SchoolBoard = $6,
-                    NumStudents = $7,
-                    ArrivalDate = $8,
-                    UpdatedDate = $9,
-                    ArrivalTime = $10,
-                    Paid = $11
-                WHERE XolaBookingID = $12 AND ExperienceID = $13`;
-
-            updateQueries.push(client.query(updateQuery2, [
-                latestWebhookData.eventName || null,
-                latestWebhookData.paymentMethod || null,
-                experienceIDs[1] || null, // ExperienceID[1]
-                latestWebhookData.Questions2 && latestWebhookData.Questions2.length > 1 ? latestWebhookData.Questions2[2] : null, // Grades
-                latestWebhookData.Questions2 && latestWebhookData.Questions2.length > 4 ? latestWebhookData.Questions2[4] : null, // SchoolName
-                latestWebhookData.Questions2 && latestWebhookData.Questions2.length > 3 ? latestWebhookData.Questions2[0] : null, // SchoolBoard
-                latestWebhookData.Questions2 && latestWebhookData.Questions2.length > 2 ? latestWebhookData.Questions2[3] : null, // NumStudents
-                latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[1] : null, // ArrivalDate
-                currentDate, // UpdatedDate
-                latestWebhookData.Questions2 && latestWebhookData.Questions2.length > 0 ? latestWebhookData.Questions2[1] : null, // ArrivalTime
-                false, // Paid (default false)
-                latestWebhookData.id || null, // XolaBookingID
-                experienceIDs[1] || null // ExperienceID[1]
-            ]));
-        }
-
-        if (experienceIDs.length > 2 && (latestWebhookData.Questions2.length> 2) ) {
-            console.log("Second if condition met: experienceIDs.length > 2 and latestWebhookData.Questions2.length > 2");
-            const updateQuery2 = `
-                UPDATE prabinsaltcorn.xolabooking 
-                SET 
-                    EventName = $1,
-                    PaymentMethod = $2,
-                    ExperienceID = $3,
-                    Grades = $4,
-                    SchoolName = $5,
-                    SchoolBoard = $6,
-                    NumStudents = $7,
-                    ArrivalDate = $8,
-                    UpdatedDate = $9,
-                    ArrivalTime = $10,
-                    Paid = $11
-                WHERE XolaBookingID = $12 AND ExperienceID = $13`;
-
-            updateQueries.push(client.query(updateQuery2, [
-                latestWebhookData.eventName || null,
-                latestWebhookData.paymentMethod || null,
-                experienceIDs[2] || null, // ExperienceID[1]
-                latestWebhookData.Questions3 && latestWebhookData.Questions3.length > 1 ? latestWebhookData.Questions3[2] : null, // Grades
-                latestWebhookData.Questions3 && latestWebhookData.Questions3.length > 4 ? latestWebhookData.Questions3[4] : null, // SchoolName
-                latestWebhookData.Questions3 && latestWebhookData.Questions3.length > 3 ? latestWebhookData.Questions3[0] : null, // SchoolBoard
-                latestWebhookData.Questions3 && latestWebhookData.Questions3.length > 2 ? latestWebhookData.Questions3[3] : null, // NumStudents
-                latestWebhookData.arrivalDate ? latestWebhookData.arrivalDate[1] : null, // ArrivalDate
-                currentDate, // UpdatedDate
-                latestWebhookData.Questions2 && latestWebhookData.Questions3.length > 0 ? latestWebhookData.Questions3[1] : null, // ArrivalTime
-                false, // Paid (default false)
-                latestWebhookData.id || null, // XolaBookingID
-                experienceIDs[2] || null // ExperienceID[1]
-            ]));
-        }
-
-        // Execute all update queries in parallel
-        await Promise.all(updateQueries);
-
-        console.log(`Data updated successfully for order.update: ${latestWebhookData.id}, ExperienceIDs: ${experienceIDs}`);
-    }
-        } catch (error) {
-            console.error('Error inserting/updating data:', error);
-        } finally {
-            client.release();
-        }
-    }
-
-//For saltcorn schema
-// new nov 7
+// Function to update and insert data into database
 const Invoice = async (client, data) => {
     let invoiceId = null; // Initialize invoiceId as null
     
     try {
-
-            // Check if the event name is 'order.cancel' and update isDeleted if true
-            if (data.eventName === 'order.cancel') {
+            // Check if the event name is 'order.cancel' and update isActive if true
+            if (data.eventName === 'order.cancel' || data.orderStatus === 700) {
                 const cancelInvoiceQuery = `
                     UPDATE saltcorn.invoices
-                    SET isDeleted = true, lastUpdated = NOW()
+                    SET isActive = false 
                     WHERE XolaBookingID = $1
                     RETURNING ID
                 `;
     
                 const cancelResult = await client.query(cancelInvoiceQuery, [data.id]);
     
+                // check how many rows are returned
                 if (cancelResult.rows.length > 0) {
+                    // select the first row and get its id and return that id
                     invoiceId = cancelResult.rows[0].id;
                     console.log(`Invoice canceled with ID: ${invoiceId}`);
                     return invoiceId;
@@ -518,6 +335,7 @@ const Invoice = async (client, data) => {
                 }
             }
 
+        // If the webhook is order.update
         if (data.eventName === 'order.update')  {  
     
       // Step 1: Check if the invoice already exists using XolaBookingID
@@ -525,7 +343,6 @@ const Invoice = async (client, data) => {
         SELECT ID FROM saltcorn.invoices
         WHERE XolaBookingID = $1
       `;
-      
       const invoiceResult = await client.query(checkInvoiceQuery, [data.id]);
   
       // If the invoice exists, return the existing ID
@@ -552,7 +369,7 @@ const Invoice = async (client, data) => {
           data.paymentMethod,   // PaymentMethod
           data.notes[0],   // Notes (default to null if not provided)
           false,                // isPaid (default to false)
-          true                 // isDeleted (default to false)
+          true                 // isactive (default to false)
         ]);
   
         // Check if the insertion returned a new ID
@@ -567,13 +384,14 @@ const Invoice = async (client, data) => {
     } catch (error) {
       console.error('Error processing invoice:', error);
     }
-    
     return invoiceId; // Return the invoice ID (either existing or newly created)
   };
   
+ 
+//Function that checks if the organization already exists in database
+// IF yes return existing id, else insert new row and return id
 const getOrganizationId = async (client, data) => {
     let organizationId = null;
-  
     try {
         // Check if data.Questions1 and data.Questions1[0] are defined to prevent TypeError
         const organizationName = data.Questions1 && data.Questions1[0]
@@ -585,12 +403,6 @@ const getOrganizationId = async (client, data) => {
             return organizationId;
         }
 
-        if (data.eventName !== 'order.update') {
-            // If the event is 'order.create', return null as no organization is associated yet
-            console.log("Event is 'order.create'; returning null for organizationId.");
-            return organizationId;
-        }
-  
         if (data.eventName === 'order.update') {
             // If the event is 'order.update', look for the organization by name
             console.log("Calling getOrganizationID with name:", organizationName);
@@ -612,7 +424,7 @@ const getOrganizationId = async (client, data) => {
                     VALUES ($1, $2)
                     RETURNING id;
                 `;
-  
+
                 const insertResult = await client.query(insertQuery, [
                     organizationName, // organization name
                     true             // isActive
@@ -625,11 +437,12 @@ const getOrganizationId = async (client, data) => {
     } catch (error) {
         console.error("Error processing organization:", error);
     }
-  
     return organizationId; // Return the organizationId (either existing or newly created)
 };
 
 
+//Function that checks if the School already exists in database
+// IF yes return existing id, else insert new row and return id
 const getSchoolId = async (client, data) => {
     let schoolId = null; // Initialize schoolId as null
     
@@ -700,14 +513,16 @@ const getSchoolId = async (client, data) => {
     return schoolId; // Return the schoolId (either existing or newly created)
   };
 
-const Contacts = async (client, data, schoolId, organizationId) => {
+//Function that checks if the Contact that booked in xola already exists in contacts table in database
+// IF yes return existing id, else insert new row and return id
+  const Contacts = async (client, data, schoolId, organizationId) => {
     let contactId = null;
 
     const trimmedName = data.customerName.trim();
 
     try {
         // Handle 'order.cancel' event
-        if (data.eventName === 'order.cancel') {
+        if (data.eventName === 'order.cancel' || data.orderStatus === 700) {
             const deactivateContactQuery = `
                 UPDATE saltcorn.Contacts
                 SET isActive = false
@@ -729,25 +544,41 @@ const Contacts = async (client, data, schoolId, organizationId) => {
 
         // Handle 'order.update' event
         if (data.eventName === 'order.update') {
-            // Use schoolId if available, otherwise fall back to organizationId
-            const SOid = schoolId || organizationId;
-            console.log(`SOid is ${schoolId ? 'schoolId' : 'organizationId'}: ${SOid}`);
+            let checkContactQuery = '';
+            let queryParams = [trimmedName.toLowerCase()];
 
-            // Step 1: Check if the contact exists based on firstName, lastName, and SOid
-            const checkContactQuery = `
-                SELECT ID FROM saltcorn.Contacts
-                WHERE LOWER(fullName) = $1 
-                AND (schoolId = $2 OR organizationId = $2)
-            `;
-            
-            const contactResult = await client.query(checkContactQuery, [trimmedName.toLowerCase(), SOid]);
+            // Step 1: Determine which ID (schoolId or organizationId) is provided
+            if (schoolId && !organizationId) {
+                // If schoolId is provided and organizationId is null
+                checkContactQuery = `
+                    SELECT ID FROM saltcorn.Contacts
+                    WHERE LOWER(fullName) = $1 
+                    AND schoolId = $2
+                `;
+                queryParams.push(schoolId);
+            } else if (organizationId && !schoolId) {
+                // If organizationId is provided and schoolId is null
+                checkContactQuery = `
+                    SELECT ID FROM saltcorn.Contacts
+                    WHERE LOWER(fullName) = $1 
+                    AND organizationId = $2
+                `;
+                queryParams.push(organizationId);
+            } else {
+                // If both schoolId and organizationId are provided, or neither is provided
+                console.log("Error: Both schoolId and organizationId cannot be provided together or both cannot be null.");
+                return null;
+            }
+
+            // Step 2: Check if the contact exists based on the available ID
+            const contactResult = await client.query(checkContactQuery, queryParams);
 
             if (contactResult.rows.length > 0) {
                 contactId = contactResult.rows[0].id;
                 console.log(`Contact found with ID: ${contactId}`);
                 return contactId;
             } else {
-                // Step 2: If the contact doesn't exist, insert a new row and return the new ID
+                // Step 3: If the contact doesn't exist, insert a new row and return the new ID
                 const insertContactQuery = `
                     INSERT INTO saltcorn.Contacts 
                     (XolaBookingID, fullName, Email, phone, isTeacher, isActive, schoolId, organizationId)
@@ -756,14 +587,14 @@ const Contacts = async (client, data, schoolId, organizationId) => {
                 `;
                 
                 const insertResult = await client.query(insertContactQuery, [
-                    data.id,
-                    trimmedName,
-                    data.customerEmail,
-                    data.phone,
+                    data.id,    //xolabooking iid
+                    trimmedName,    //filtered name
+                    data.customerEmail,     // customer email
+                    data.phone, //customer phone
                     true,         // isTeacher
                     true,         // isActive
-                    schoolId,     // schoolId
-                    organizationId // organizationId
+                    schoolId || null,     // schoolId (can be null)
+                    organizationId || null // organizationId (can be null)
                 ]);
                 
                 contactId = insertResult.rows[0].id;
@@ -777,6 +608,9 @@ const Contacts = async (client, data, schoolId, organizationId) => {
     return contactId;
 };
 
+
+//Function that checks if the booking already exists in bookings table in database with xolabookingID
+// IF yes return existing id, else insert new row and return id
 const Booking = async (client, data, invoiceId, contactId, classNum ) => {
     let bookingId = null;  // Initialize bookingId as null
   
@@ -786,14 +620,15 @@ const Booking = async (client, data, invoiceId, contactId, classNum ) => {
 
 
         // Check if the event name is 'order.cancel' and update isDeleted if true
-        if (data.eventName === 'order.cancel') {
-            const cancelBookingQuery = `
-                UPDATE saltcorn.Bookings
-                SET isDeleted = true, lastUpdated = NOW()
-                WHERE XolaBookingID = $1
-                RETURNING ID
-            `;
-
+        if (data.eventName === 'order.cancel' || data.orderStatus === 700) {
+                const cancelBookingQuery = `
+                    UPDATE saltcorn.Bookings
+                    SET 
+                        isActive = false,
+                        bookingStatus = 'Cancelled'
+                    WHERE XolaBookingID = $1
+                    RETURNING ID
+                `;
             const cancelResult = await client.query(cancelBookingQuery, [data.id]);
 
             if (cancelResult.rows.length > 0) {
@@ -837,8 +672,8 @@ const Booking = async (client, data, invoiceId, contactId, classNum ) => {
           invoiceId,      // InvoiceID (nullable)
           contactId,      // ContactID (nullable)
           classNum,        // Number of Classes
-          true,
-          data.notes[0]
+          true,         //isactive
+          data.notes[0] //notes
         ]);
         
         bookingId = insertResult.rows[0].id;
@@ -853,17 +688,25 @@ const Booking = async (client, data, invoiceId, contactId, classNum ) => {
     return bookingId;  // Return the bookingId (either existing or newly created)
   };
   
+  //Function that checks if the themes already exists in themes table in database
+// IF yes return existing id, else insert new row and return id
 const getThemes = async (client, data) => {
     const themeIds = []; // Array to store all theme IDs
 
     try {
         for (let i = 0; i < data.ExperiencesID.length; i++) {
-            const themeName = data.addons1[i]? data.addons1[i]
-        .split('(')[0]            // Try splitting at '(' first
-        .split('-')[0]            // Only if no '(' was found, split at '-'
-        .trim(): null;
+            console.log('Theme before trim is: '+ data.addons1[i]);
 
-            console.log('Theme selected is: '+ themeName);
+            // extract just the theme name from name with filter
+            const themeName = data.addons1[i]
+    ? data.addons1[i]
+        .split(':')[1]?.trim()  // Get the part after ':'
+        .split('(')[0]?.trim()  // Get the part before '('
+        .split('-')[0]?.trim()  // Get the part before '-'
+    : null;
+
+console.log(`Theme name extracted: ${themeName}`);
+
 
             if (!themeName) {
                 console.log(`Theme name missing or invalid for ExperienceID at index ${i}. Skipping this entry.`);
@@ -906,6 +749,9 @@ const getThemes = async (client, data) => {
     return themeIds;  // Return array of theme IDs
 };
 
+
+//Function that checks if the location already exists in database
+// IF yes return existing id, else insert new row and return id
 const getLocations = async (client, data) => {
   const locationIds = []; // Array to store all location IDs
 
@@ -913,7 +759,8 @@ const getLocations = async (client, data) => {
       for (let i = 0; i < data.ExperiencesID.length; i++) {
           // Check if addons2[i] exists and is a non-empty string
           const locationName = data.addons2[i]? data.addons2[i].split('(')[0]            // Try splitting at '(' first
-        .split('-')[0]            // Only if no '(' was found, split at '-'
+          .split(':')[1]             // Split at ':' and take the part after the colon
+          .split('-')[0]            // Only if no '(' was found, split at '-'
         .trim(): null;
 
           if (!locationName) {
@@ -957,6 +804,8 @@ const getLocations = async (client, data) => {
   return locationIds;  // Return array of location IDs
 };
 
+//Function that checks if the program already exists in database
+// IF yes return existing id, else insert new row and return id
 const getPrograms = async (client, data) => {
   const programIds = []; // Array to store all program IDs
 
@@ -1004,10 +853,32 @@ const getPrograms = async (client, data) => {
   return programIds;  // Return array of program IDs
 };
 
+//Function that checks if the classes with booking id from above already exists in classes table in database
+// IF yes return existing id, else insert new row and return id
 const Classes = async (client, data, bookingId, programIds, themeIds, locationIds) => {
   const classIds = []; // Array to store created or updated class IDs
 
   try {
+
+    if (data.eventName === 'order.cancel' || data.orderStatus === 700) {
+        // Handle 'order.cancel' event by deactivating classes
+        const deactivateQuery = `
+            UPDATE saltcorn.Classes
+            SET isActive = false
+            WHERE BookingID = $1
+            RETURNING ID
+        `;
+        const deactivateResult = await client.query(deactivateQuery, [bookingId]);
+
+        if (deactivateResult.rows.length > 0) {
+            console.log(`Deactivated ${deactivateResult.rows.length} class(es) with BookingID: ${bookingId}`);
+            deactivateResult.rows.forEach(row => classIds.push(row.id));
+        } else {
+            console.log(`No classes found with BookingID: ${bookingId} to deactivate.`);
+        }
+        return classIds; // Return IDs of deactivated classes
+    }
+
       // Always handle 'order.update' events
       // Lookup all classes with the same BookingID
       const selectClassesQuery = `
@@ -1064,7 +935,6 @@ const Classes = async (client, data, bookingId, programIds, themeIds, locationId
               }
           }
       }
-
       return classIds; // Return the array of created or updated class IDs
   } catch (error) {
       console.error("Error processing class creation or update:", error);
@@ -1073,10 +943,31 @@ const Classes = async (client, data, bookingId, programIds, themeIds, locationId
 };
 
 
+//Function that checks if the YouthExperienceclasses already exists in  youthexperience table in database
+// IF yes return existing id, else insert new row and return id
 const YouthExperienceClasses = async (client, data, classIds, schoolId) => {
     const youthExperienceClassIds = []; // Array to store created or retrieved YouthExperienceClass IDs
   
     try {
+
+        if (data.eventName === 'order.cancel' || data.orderStatus === 700) {
+            const deactivateQuery = `
+                UPDATE saltcorn.YouthExperienceClasses
+                SET isActive = false
+                WHERE ClassID = ANY($1)
+                RETURNING ID
+            `;
+            const deactivateResult = await client.query(deactivateQuery, [classIds]);
+
+            if (deactivateResult.rows.length > 0) {
+                console.log(`Deactivated ${deactivateResult.rows.length} YouthExperienceClass(es) for ClassIDs: ${classIds.join(', ')}`);
+                deactivateResult.rows.forEach(row => youthExperienceClassIds.push(row.id));
+            } else {
+                console.log(`No YouthExperienceClass records found for ClassIDs: ${classIds.join(', ')} to deactivate.`);
+            }
+            return youthExperienceClassIds; // Return IDs of deactivated classes
+        }
+
         // Get the current year as a date in YYYY format for AcademicYear
         const currentYearDate = `${new Date().getFullYear()}`;
         let classIndex = 0; // Start the classIndex at 0
@@ -1090,7 +981,8 @@ const YouthExperienceClasses = async (client, data, classIds, schoolId) => {
                 console.log(`Questions or quantity for experience at index ${i} is missing or undefined. Skipping.`);
                 continue;
             }
-  
+
+            // user enter grades and studentNum sepraed by comma, so split it  with comma
             const gradesArray = questions[2] ? questions[2].split(',') : [];
             const studentNum = questions[4] ? questions[4].split(',') : [];
             const quantity = data.Quantity[i] || 0;
@@ -1124,9 +1016,9 @@ const YouthExperienceClasses = async (client, data, classIds, schoolId) => {
                     `;
   
                     const updateResult = await client.query(updateQuery, [
-                        schoolId,
-                        studentNum[j],
-                        gradesArray[j],
+                        schoolId,   //schoolid
+                        studentNum[j], //student number
+                        gradesArray[j], // grade number
                         youthClassId
                     ]);
   
@@ -1177,10 +1069,37 @@ const YouthExperienceClasses = async (client, data, classIds, schoolId) => {
   };
   
 
+//Function that checks if the professional learning classes already exists in professionallearningclasses table in database
+// IF yes return existing id, else insert new row and return id
+
 const ProfessionalLearningClasses = async (client, data, classIds, organizationId) => {
     const professionalLearningClassIds = []; // Array to store created or updated ProfessionalLearningClass IDs
   
     try {
+        if (data.eventName === 'order.cancel' || data.orderStatus === 700) {
+            // Handle 'order.cancel' event by deactivating ProfessionalLearningClasses
+            const deactivateQuery = `
+                UPDATE saltcorn.ProfessionalLearningClasses
+                SET isActive = false
+                WHERE ClassID = ANY($1)
+                RETURNING ID
+            `;
+            const deactivateResult = await client.query(deactivateQuery, [classIds]);
+
+            if (deactivateResult.rows.length > 0) {
+                console.log(`Deactivated ${deactivateResult.rows.length} ProfessionalLearningClass(es) for ClassIDs: ${classIds.join(', ')}`);
+                // Gather the IDs of deactivated ProfessionalLearningClasses
+                for (const row of deactivateResult.rows) {
+                    professionalLearningClassIds.push(row.id);
+                }
+            } else {
+                console.log(`No ProfessionalLearningClass records found for ClassIDs: ${classIds.join(', ')} to deactivate.`);
+            }
+
+            return professionalLearningClassIds; // Return the IDs of deactivated ProfessionalLearningClasses
+        }
+
+
         // Handle 'order.update' event
         // For each classId, check for existing ProfessionalLearningClass records and update them
         for (let i = 0; i < classIds.length; i++) {
@@ -1199,7 +1118,7 @@ const ProfessionalLearningClasses = async (client, data, classIds, organizationI
                     const updateQuery = `
                         UPDATE saltcorn.ProfessionalLearningClasses
                         SET 
-                            OrganizationID = $1,
+                            OrganizationID = $1
                         WHERE ID = $2
                         RETURNING ID
                     `;
@@ -1217,7 +1136,6 @@ const ProfessionalLearningClasses = async (client, data, classIds, organizationI
                 }
             } else {
                 console.log(`No existing ProfessionalLearningClass records found for ClassID: ${classIds[i]}. Creating new record.`);
-  
                 // If no record exists, create a new ProfessionalLearningClass entry
                 const quantity = data.Quantity[i] || 0;
                 if (quantity > 0) {
@@ -1234,10 +1152,10 @@ const ProfessionalLearningClasses = async (client, data, classIds, organizationI
                         classIds[i],                          // ClassID from classes array
                         organizationId,                       // OrganizationID
                         quantity,                               // NumberofParticipants
-                        questions[1],
-                        questions[4] || null,
-                        questions[3],
-                        questions[2]
+                        questions[1],       //meeting time
+                        questions[4] || null, // location
+                        questions[3], // special needs
+                        questions[2] // other details
                     ]);
   
                     // If insert was successful, store the ProfessionalLearningClass ID
@@ -1260,10 +1178,37 @@ const ProfessionalLearningClasses = async (client, data, classIds, organizationI
     }
   };
   
-
+//Function that checks if the classes already exists in  classes table in database
+// IF yes return existing id, else insert new row and return id
+// This function is same as Classes function, however this one is for professional learning one
+// The logic for both experience are slightly diffrent
 const ProfClasses = async (client, data, bookingId, programIds, themeIds, locationIds) => {
     const classIds = []; // Array to store created or updated class IDs
     try {
+
+        if (data.eventName === 'order.cancel' || data.orderStatus === 700) {
+            // Handle 'order.cancel' event by deactivating classes
+            const deactivateClassesQuery = `
+                UPDATE saltcorn.Classes
+                SET isActive = false
+                WHERE BookingID = $1
+                RETURNING ID
+            `;
+            const deactivateResult = await client.query(deactivateClassesQuery, [bookingId]);
+
+            if (deactivateResult.rows.length > 0) {
+                console.log(`Deactivated ${deactivateResult.rows.length} professional class(es) with BookingID: ${bookingId}`);
+                // Gather the IDs of deactivated classes
+                for (const row of deactivateResult.rows) {
+                    classIds.push(row.id);
+                }
+            } else {
+                console.log(`No professional classes found with BookingID: ${bookingId} to deactivate.`);
+            }
+
+            return classIds; // Return the IDs of deactivated classes
+        }
+
         // Always handle 'order.update' events
         // Lookup all classes with the same BookingID
         const selectClassesQuery = `
@@ -1317,7 +1262,6 @@ const ProfClasses = async (client, data, bookingId, programIds, themeIds, locati
                 }
             }
         }
-        
         return classIds; // Return the array of created or updated class IDs
     } catch (error) {
         console.error("Error processing professional class creation or update:", error);
@@ -1325,7 +1269,6 @@ const ProfClasses = async (client, data, bookingId, programIds, themeIds, locati
     }
   };
   
-
 
 // Handle GET request to the root URL
 app.get('/', (req, res) => {
@@ -1342,7 +1285,6 @@ app.get('/latest', (req, res) => {
     `);
 });
 
-
 // Error handling for unhandled routes
 app.use((req, res) => {
     console.log(`Unhandled request: ${req.method} ${req.originalUrl}`);
@@ -1350,7 +1292,6 @@ app.use((req, res) => {
 });
 
 // Start the server
-
 app.listen(PORT, () => {
     console.log(`Server running on http://localhost:${PORT}`);
 
