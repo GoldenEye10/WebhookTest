@@ -1,4 +1,4 @@
-# Xola Webhook
+# Xola Webhook Handler
 This application is designed to process incoming webhook data from Xola, a platform for managing bookings and payments. It receives JSON data from Xola's webhook endpoint, processes the booking details, and stores the relevant data in a PostgreSQL database.
 
 ## Features
@@ -14,7 +14,7 @@ This application is designed to process incoming webhook data from Xola, a platf
 - **Node.js** and **Express.js** for the server
 - **PostgreSQL** for database storage
 - **Body-Parser** for parsing incoming webhook payloads
-- **Xola Webhook Integration** to receive booking and event updates
+- **Xola Webhook ** to receive booking and event updates
 
 ---
 ## Installation
@@ -107,7 +107,77 @@ This application interacts with multiple database tables:
 
 ## Example Payload
 Here is an example JSON payload that the application processes:
-
+```bash
+{
+  "eventName": "order.update",
+  "data": {
+    "id": "674a1e2d7bce49752d08ddc9",
+    "object": "order",
+    "status": "committed",
+    "reminders": [],
+    "notes": [],
+    "source": "checkout",
+    "dueNow": 0,
+    "trackingData": {
+      "userAgent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+    },
+    "telemetry": [],
+    "customerName": "Prabin Shrestha",
+    "customerEmail": "prabin@testtest.test",
+    "phone": "9999999999",
+    "phoneCanonical": "9999999999",
+    "currency": "USD",
+    "amount": 210,
+    "balance": 0,
+    "tags": [
+      {
+        "id": "Multi-item",
+        "system": true
+      },
+      {
+        "id": "asd"
+      },
+      {
+        "id": "test32",
+        "system": true,
+        "type": "coupon_code"
+      }
+    ],
+    "customerTimezoneName": "America/Vancouver",
+    "createdAt": "2024-11-29T20:03:57+00:00",
+    "createdBy": {
+      "id": "674a1e461b9d8f2d76038afb"
+    },
+    "updatedAt": "2024-12-04T23:05:33+00:00",
+    "conversation": {
+      "id": "674a1e471b9d8f2d76038b54"
+    },
+    "seller": {
+      "id": "66fed0e5bc104b5b0e02f07b"
+    },
+    "organizer": {
+      "id": "674a1e461b9d8f2d76038afb"
+    },
+    "splitPayment": {
+      "enabled": false
+    },
+    "paymentReminders": [],
+    "travelers": [
+      {
+        "id": "674a1e461b9d8f2d76038afb"
+      }
+    ],
+    "items": [
+      {
+        "id": "674a1e2d7bce49752d08ddca",
+        "arrival": "2024-12-16",
+        "experience": {
+          "id": "671a908096933608b70dd4cd"
+        },
+        "name": "YOUTH INDOOR - SESSION 1 OF 2",
+        "createdAt": "2024-11-29T20:03:57+00:00",
+        "updated": "2024-12-04T23:05:33+00:00",
+```
 ---
 
 ## Error Handling
