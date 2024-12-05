@@ -3,10 +3,10 @@ This application is designed to process incoming webhook data from Xola, a platf
 
 ## Features
 
-- Handles Xola webhook data for both **professional learning** and **youth experience** events.
-- Extracts and processes all necessay details in JSON like experiences, demographics, quantity, notes, name, email, date and add-ons.
+- Handles Xola webhook data for both **professional learning** and **youth experience** events, Ignores **Any Other bookings like Individual Bookings** events.
+- Extracts and processes all necessay details in JSON like experiences, demographics, quantity, notes, name, email, date, themes, locations etc.
 - Integrates with a PostgreSQL database to store processed data for further use.
-- Provides logic for handling different events and order statuses(Integer such as `order.update`, `order.create` and status of order.
+- Provides logic for handling different events and order statuses(Integer such as `order.update`, `order.cancel` and Integer status of order.
 
 ---
 ## Technologies Used
